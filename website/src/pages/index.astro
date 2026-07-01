@@ -26,7 +26,7 @@ const levels = [
 ];
 ---
 
-<BaseLayout title="Home" description="From Silicon to Cloud Master Every Technical Interview Round">
+<BaseLayout title="Home" description="Structured interviewer toolkit rubrics, question banks, and calibration frameworks for fair technical hiring">
   <!-- Hero -->
   <section class="relative overflow-hidden">
     <div class="absolute inset-0 bg-gradient-to-br from-brand-950 via-surface-900 to-brand-900"></div>
@@ -38,25 +38,56 @@ const levels = [
     <div class="relative max-w-6xl mx-auto px-6 py-24 lg:py-36 text-center">
       <div class="inline-flex items-center gap-2 px-4 py-1.5 rounded-full bg-brand-500/10 border border-brand-500/20 text-brand-300 text-sm font-medium mb-8 animate-fade-in">
         <span class="w-2 h-2 rounded-full bg-brand-400 animate-pulse"></span>
-        Open Source Interview Platform
+        Open Source Interviewer Toolkit
       </div>
 
       <h1 class="text-4xl sm:text-5xl lg:text-7xl font-bold text-white mb-6 animate-slide-up">
-        From <span class="text-transparent bg-clip-text bg-gradient-to-r from-brand-400 to-accent-400">Zero</span> to
-        <span class="text-transparent bg-clip-text bg-gradient-to-r from-accent-400 to-brand-400">Hero</span>
+        Evaluate with <span class="text-transparent bg-clip-text bg-gradient-to-r from-brand-400 to-accent-400">Confidence</span>
       </h1>
 
-      <p class="text-xl text-gray-300 max-w-2xl mx-auto mb-10 animate-slide-up">
-        Silicon to Cloud everything in between. Master technical interviews with structured rubrics, real questions, and calibrated evaluation frameworks.
+      <p class="text-xl text-gray-300 max-w-2xl mx-auto mb-6 animate-slide-up">
+        A structured evaluation framework for <strong>interviewers</strong>. Rubrics, question banks, and calibration tools to conduct fair, objective, and consistent technical interviews across all engineering levels.
+      </p>
+
+      <p class="text-sm text-gray-400 max-w-xl mx-auto mb-10 animate-slide-up">
+        Built for those who evaluate not those who prepare. However, candidates can use this to understand exactly how they'll be assessed.
       </p>
 
       <div class="flex flex-col sm:flex-row items-center justify-center gap-4 animate-slide-up">
         <a href="/tech-interview-os/rounds" class="px-8 py-3 rounded-xl bg-brand-600 hover:bg-brand-500 text-white font-semibold shadow-lg shadow-brand-500/25 hover:shadow-brand-500/40 transition-all">
-          Start Your Journey →
+          Browse Evaluation Rounds →
         </a>
-        <a href="/tech-interview-os/profiles" class="px-8 py-3 rounded-xl border border-gray-600 hover:border-brand-400 text-gray-300 hover:text-white font-medium transition-all">
-          Pick Your Profile
+        <a href="/tech-interview-os/rubrics/levels" class="px-8 py-3 rounded-xl border border-gray-600 hover:border-brand-400 text-gray-300 hover:text-white font-medium transition-all">
+          Level Calibration Guide
         </a>
+      </div>
+    </div>
+  </section>
+
+  <!-- Who is this for -->
+  <section class="max-w-6xl mx-auto px-6 py-16">
+    <div class="glass rounded-2xl p-8 md:p-12 border border-brand-500/20">
+      <div class="grid md:grid-cols-2 gap-8">
+        <div>
+          <h2 class="text-2xl font-bold text-white mb-4">🎯 Built for Interviewers</h2>
+          <ul class="space-y-3 text-gray-300 text-sm">
+            <li class="flex items-start gap-2"><span class="text-brand-400 mt-0.5">✓</span> Structured scoring rubrics for every round type</li>
+            <li class="flex items-start gap-2"><span class="text-brand-400 mt-0.5">✓</span> Level calibration matrices (SDE 1 → Staff)</li>
+            <li class="flex items-start gap-2"><span class="text-brand-400 mt-0.5">✓</span> 250+ vetted questions with expected answers & follow-ups</li>
+            <li class="flex items-start gap-2"><span class="text-brand-400 mt-0.5">✓</span> Feedback templates for objective post-interview write-ups</li>
+            <li class="flex items-start gap-2"><span class="text-brand-400 mt-0.5">✓</span> Domain-specific evaluation criteria (embedded to cloud)</li>
+          </ul>
+        </div>
+        <div>
+          <h2 class="text-2xl font-bold text-white mb-4">💡 Useful for Candidates Too</h2>
+          <ul class="space-y-3 text-gray-300 text-sm">
+            <li class="flex items-start gap-2"><span class="text-gray-500 mt-0.5">→</span> Understand exactly how you'll be scored</li>
+            <li class="flex items-start gap-2"><span class="text-gray-500 mt-0.5">→</span> See the difference between SDE 2 and SDE 3 answers</li>
+            <li class="flex items-start gap-2"><span class="text-gray-500 mt-0.5">→</span> Practice with real interview question banks</li>
+            <li class="flex items-start gap-2"><span class="text-gray-500 mt-0.5">→</span> Know what interviewers look for at each level</li>
+          </ul>
+          <p class="text-xs text-gray-500 mt-4 italic">This is an evaluation toolkit first, preparation resource second.</p>
+        </div>
       </div>
     </div>
   </section>
@@ -138,11 +169,11 @@ const levels = [
   <!-- CTA -->
   <section class="bg-gradient-to-r from-brand-600 to-brand-800 py-16">
     <div class="max-w-4xl mx-auto px-6 text-center">
-      <h2 class="text-3xl font-bold text-white mb-4">Ready to become an interview expert?</h2>
-      <p class="text-brand-100 mb-8">Whether you're preparing as a candidate or calibrating as an interviewer we've got you covered.</p>
+      <h2 class="text-3xl font-bold text-white mb-4">Run better interviews, hire with confidence</h2>
+      <p class="text-brand-100 mb-8">Structured evaluation removes bias. Every candidate gets the same fair assessment regardless of who interviews them.</p>
       <div class="flex flex-col sm:flex-row items-center justify-center gap-4">
         <a href="/tech-interview-os/rounds/coding" class="px-8 py-3 rounded-xl bg-white text-brand-700 font-semibold hover:bg-brand-50 transition-colors">
-          Start with Coding Round
+          View Coding Round Rubric
         </a>
         <a href="/tech-interview-os/questions/dsa" class="px-8 py-3 rounded-xl border border-white/30 text-white font-medium hover:bg-white/10 transition-colors">
           Browse 250+ Questions
