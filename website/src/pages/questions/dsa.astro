@@ -86,14 +86,581 @@ def length_of_lis(nums):
 
   <hr />
 
-  <h2 id="more">More Problems</h2>
-  <p>This page shows the top 5. The full bank includes 25 problems covering:</p>
-  <ul>
-    <li>Sliding Window (Max Subarray, Minimum Window Substring)</li>
-    <li>Binary Search (Search Rotated Array, Median of Two Sorted Arrays)</li>
-    <li>Graph (Dijkstra, Union-Find, Topological Sort)</li>
-    <li>Trees (Serialize/Deserialize, Morris Traversal)</li>
-    <li>Advanced DP (Knapsack variants, Palindrome Partitioning)</li>
-    <li>Trie (Word Search II, Autocomplete)</li>
-  </ul>
+  <h2 id="p6">P6: Binary Search in Rotated Sorted Array</h2>
+  <p><strong>Problem:</strong> Search target in a sorted array that has been rotated at some pivot. Return index or -1.</p>
+  <p><strong>Approach:</strong> Modified binary search. One half is always sorted — determine which half target falls in.</p>
+  <pre><code class="language-python">def search_rotated(nums, target):
+    lo, hi = 0, len(nums) - 1
+    while lo &lt;= hi:
+        mid = (lo + hi) // 2
+        if nums[mid] == target:
+            return mid
+        # Left half is sorted
+        if nums[lo] &lt;= nums[mid]:
+            if nums[lo] &lt;= target &lt; nums[mid]:
+                hi = mid - 1
+            else:
+                lo = mid + 1
+        else:
+            # Right half is sorted
+            if nums[mid] &lt; target &lt;= nums[hi]:
+                lo = mid + 1
+            else:
+                hi = mid - 1
+    return -1</code></pre>
+  <p><strong>Complexity:</strong> O(log n) time, O(1) space.</p>
+  <p><strong>Follow-up:</strong> What if duplicates exist? → Worst case O(n) when all elements equal except one.</p>
+
+  <hr />
+
+  <h2 id="p7">P7: Sliding Window Maximum (Deque)</h2>
+  <p><strong>Problem:</strong> Given array and window size k, return max of each sliding window.</p>
+  <p><strong>Approach:</strong> Monotonic decreasing deque storing indices. Front always has current window max.</p>
+  <pre><code class="language-python">from collections import deque
+
+def max_sliding_window(nums, k):
+    dq = deque()  # stores indices, front = max
+    result = []
+    for i, num in enumerate(nums):
+        # Remove elements outside window
+        while dq and dq[0] &lt; i - k + 1:
+            dq.popleft()
+        # Remove smaller elements from back
+        while dq and nums[dq[-1]] &lt; num:
+            dq.pop()
+        dq.append(i)
+        if i &gt;= k - 1:
+            result.append(nums[dq[0]])
+    return result</code></pre>
+  <p><strong>Complexity:</strong> O(n) time, O(k) space.</p>
+  <p><strong>Follow-up:</strong> How to handle this in a stream where you can't index? → Use a max-heap with lazy deletion.</p>
+
+  <hr />
+
+  <h2 id="p8">P8: Word Break (Dynamic Programming)</h2>
+  <p><strong>Problem:</strong> Given a string and dictionary of words, determine if string can be segmented into dictionary words.</p>
+  <p><strong>Approach:</strong> DP where dp[i] = True if s[0:i] can be segmented.</p>
+  <pre><code class="language-python">def word_break(s, word_dict):
+    word_set = set(word_dict)
+    dp = [False] * (len(s) + 1)
+    dp[0] = True
+    for i in range(1, len(s) + 1):
+        for j in range(i):
+            if dp[j] and s[j:i] in word_set:
+                dp[i] = True
+                break
+    return dp[len(s)]</code></pre>
+  <p><strong>Complexity:</strong> O(n² · m) time where m is avg word length for hashing, O(n) space.</p>
+  <p><strong>Follow-up:</strong> Return all possible segmentations? → Backtracking with memoization.</p>
+
+  <hr />
+
+  <h2 id="p9">P9: Clone Graph (BFS)</h2>
+  <p><strong>Problem:</strong> Given a node in a connected undirected graph, return a deep copy.</p>
+  <p><strong>Approach:</strong> BFS with a hash map mapping original → clone.</p>
+  <pre><code class="language-python">from collections import deque
+
+def clone_graph(node):
+    if not node:
+        return None
+    cloned = {"{"}node: Node(node.val){"}"}
+    queue = deque([node])
+    while queue:
+        curr = queue.popleft()
+        for neighbor in curr.neighbors:
+            if neighbor not in cloned:
+                cloned[neighbor] = Node(neighbor.val)
+                queue.append(neighbor)
+            cloned[curr].neighbors.append(cloned[neighbor])
+    return cloned[node]</code></pre>
+  <p><strong>Complexity:</strong> O(V + E) time, O(V) space.</p>
+  <p><strong>Follow-up:</strong> What about a directed graph with cycles? → Same approach works since we track visited via cloned map.</p>
+
+  <hr />
+
+  <h2 id="p10">P10: Course Schedule (Topological Sort)</h2>
+  <p><strong>Problem:</strong> Given n courses and prerequisites, determine if all courses can be finished (detect cycle in DAG).</p>
+  <p><strong>Approach:</strong> Kahn's algorithm — BFS with in-degree tracking.</p>
+  <pre><code class="language-python">from collections import deque, defaultdict
+
+def can_finish(num_courses, prerequisites):
+    graph = defaultdict(list)
+    in_degree = [0] * num_courses
+    for course, prereq in prerequisites:
+        graph[prereq].append(course)
+        in_degree[course] += 1
+
+    queue = deque([i for i in range(num_courses) if in_degree[i] == 0])
+    completed = 0
+
+    while queue:
+        node = queue.popleft()
+        completed += 1
+        for neighbor in graph[node]:
+            in_degree[neighbor] -= 1
+            if in_degree[neighbor] == 0:
+                queue.append(neighbor)
+
+    return completed == num_courses</code></pre>
+  <p><strong>Complexity:</strong> O(V + E) time, O(V + E) space.</p>
+  <p><strong>Follow-up:</strong> Return the actual ordering? → Collect nodes as you pop from queue.</p>
+
+  <hr />
+
+  <h2 id="p11">P11: Find Median from Data Stream (Two Heaps)</h2>
+  <p><strong>Problem:</strong> Design a data structure that supports addNum and findMedian in O(log n) and O(1).</p>
+  <p><strong>Approach:</strong> Max-heap for lower half, min-heap for upper half. Keep balanced.</p>
+  <pre><code class="language-python">import heapq
+
+class MedianFinder:
+    def __init__(self):
+        self.lo = []  # max-heap (negate values)
+        self.hi = []  # min-heap
+
+    def add_num(self, num):
+        heapq.heappush(self.lo, -num)
+        # Ensure max of lo &lt;= min of hi
+        heapq.heappush(self.hi, -heapq.heappop(self.lo))
+        # Balance sizes: lo can have at most 1 more
+        if len(self.hi) &gt; len(self.lo):
+            heapq.heappush(self.lo, -heapq.heappop(self.hi))
+
+    def find_median(self):
+        if len(self.lo) &gt; len(self.hi):
+            return -self.lo[0]
+        return (-self.lo[0] + self.hi[0]) / 2.0</code></pre>
+  <p><strong>Complexity:</strong> addNum O(log n), findMedian O(1).</p>
+  <p><strong>Follow-up:</strong> What if 99% of numbers are between 0-100? → Bucket counting for O(1) operations.</p>
+
+  <hr />
+
+  <h2 id="p12">P12: Serialize/Deserialize Binary Tree</h2>
+  <p><strong>Problem:</strong> Design an algorithm to serialize and deserialize a binary tree.</p>
+  <p><strong>Approach:</strong> Preorder traversal with null markers.</p>
+  <pre><code class="language-python">class Codec:
+    def serialize(self, root):
+        result = []
+        def dfs(node):
+            if not node:
+                result.append("N")
+                return
+            result.append(str(node.val))
+            dfs(node.left)
+            dfs(node.right)
+        dfs(root)
+        return ",".join(result)
+
+    def deserialize(self, data):
+        values = iter(data.split(","))
+        def dfs():
+            val = next(values)
+            if val == "N":
+                return None
+            node = TreeNode(int(val))
+            node.left = dfs()
+            node.right = dfs()
+            return node
+        return dfs()</code></pre>
+  <p><strong>Complexity:</strong> O(n) time and space for both operations.</p>
+  <p><strong>Follow-up:</strong> How to serialize a BST more efficiently? → Only preorder needed (no null markers), rebuild using value bounds.</p>
+
+  <hr />
+
+  <h2 id="p13">P13: Minimum Window Substring (Sliding Window)</h2>
+  <p><strong>Problem:</strong> Given strings s and t, find the minimum window in s containing all characters of t.</p>
+  <p><strong>Approach:</strong> Expand window right, contract left when all chars satisfied.</p>
+  <pre><code class="language-python">from collections import Counter
+
+def min_window(s, t):
+    need = Counter(t)
+    missing = len(t)
+    left = 0
+    start, end = 0, float('inf')
+
+    for right, char in enumerate(s):
+        if need[char] &gt; 0:
+            missing -= 1
+        need[char] -= 1
+
+        while missing == 0:
+            if right - left &lt; end - start:
+                start, end = left, right
+            need[s[left]] += 1
+            if need[s[left]] &gt; 0:
+                missing += 1
+            left += 1
+
+    return "" if end == float('inf') else s[start:end + 1]</code></pre>
+  <p><strong>Complexity:</strong> O(|s| + |t|) time, O(|t|) space.</p>
+  <p><strong>Follow-up:</strong> What if you need ALL minimum windows (not just one)? → Collect all windows with length == best.</p>
+
+  <hr />
+
+  <h2 id="p14">P14: Trapping Rain Water (Two Pointers)</h2>
+  <p><strong>Problem:</strong> Given elevation map, compute how much water it can trap.</p>
+  <p><strong>Approach:</strong> Two pointers tracking left_max and right_max.</p>
+  <pre><code class="language-python">def trap(height):
+    left, right = 0, len(height) - 1
+    left_max = right_max = 0
+    water = 0
+
+    while left &lt; right:
+        if height[left] &lt; height[right]:
+            if height[left] &gt;= left_max:
+                left_max = height[left]
+            else:
+                water += left_max - height[left]
+            left += 1
+        else:
+            if height[right] &gt;= right_max:
+                right_max = height[right]
+            else:
+                water += right_max - height[right]
+            right -= 1
+
+    return water</code></pre>
+  <p><strong>Complexity:</strong> O(n) time, O(1) space.</p>
+  <p><strong>Follow-up:</strong> 2D version (trapping rain water on a matrix)? → BFS with min-heap from borders inward.</p>
+
+  <hr />
+
+  <h2 id="p15">P15: Valid Parentheses Generator (Backtracking)</h2>
+  <p><strong>Problem:</strong> Generate all valid combinations of n pairs of parentheses.</p>
+  <p><strong>Approach:</strong> Backtracking with open/close counts.</p>
+  <pre><code class="language-python">def generate_parenthesis(n):
+    result = []
+    def backtrack(curr, open_count, close_count):
+        if len(curr) == 2 * n:
+            result.append(curr)
+            return
+        if open_count &lt; n:
+            backtrack(curr + "(", open_count + 1, close_count)
+        if close_count &lt; open_count:
+            backtrack(curr + ")", open_count, close_count + 1)
+    backtrack("", 0, 0)
+    return result</code></pre>
+  <p><strong>Complexity:</strong> O(4^n / √n) time (Catalan number), O(n) recursion depth.</p>
+
+  <hr />
+
+  <h2 id="p16">P16: Number of Islands (DFS/BFS)</h2>
+  <p><strong>Problem:</strong> Given a 2D grid of '1' (land) and '0' (water), count number of islands.</p>
+  <p><strong>Approach:</strong> DFS from each unvisited '1', mark all connected cells as visited.</p>
+  <pre><code class="language-python">def num_islands(grid):
+    if not grid:
+        return 0
+    rows, cols = len(grid), len(grid[0])
+    count = 0
+
+    def dfs(r, c):
+        if r &lt; 0 or r &gt;= rows or c &lt; 0 or c &gt;= cols:
+            return
+        if grid[r][c] != '1':
+            return
+        grid[r][c] = '0'  # mark visited
+        dfs(r + 1, c)
+        dfs(r - 1, c)
+        dfs(r, c + 1)
+        dfs(r, c - 1)
+
+    for r in range(rows):
+        for c in range(cols):
+            if grid[r][c] == '1':
+                count += 1
+                dfs(r, c)
+    return count</code></pre>
+  <p><strong>Complexity:</strong> O(m × n) time, O(m × n) space worst case (recursion stack).</p>
+  <p><strong>Follow-up:</strong> What if grid is too large for recursion? → Iterative BFS with explicit queue or Union-Find.</p>
+
+  <hr />
+
+  <h2 id="p17">P17: Kth Largest Element (Quickselect)</h2>
+  <p><strong>Problem:</strong> Find kth largest element in unsorted array without sorting.</p>
+  <p><strong>Approach:</strong> Quickselect — partition around pivot, recurse on relevant half.</p>
+  <pre><code class="language-python">import random
+
+def find_kth_largest(nums, k):
+    target = len(nums) - k  # kth largest = (n-k)th smallest
+
+    def quickselect(left, right):
+        pivot_idx = random.randint(left, right)
+        nums[pivot_idx], nums[right] = nums[right], nums[pivot_idx]
+        pivot = nums[right]
+        store = left
+
+        for i in range(left, right):
+            if nums[i] &lt; pivot:
+                nums[i], nums[store] = nums[store], nums[i]
+                store += 1
+        nums[store], nums[right] = nums[right], nums[store]
+
+        if store == target:
+            return nums[store]
+        elif store &lt; target:
+            return quickselect(store + 1, right)
+        else:
+            return quickselect(left, store - 1)
+
+    return quickselect(0, len(nums) - 1)</code></pre>
+  <p><strong>Complexity:</strong> O(n) average, O(n²) worst case. O(1) extra space.</p>
+  <p><strong>Follow-up:</strong> Guaranteed O(n)? → Median-of-medians pivot selection (impractical but theoretical).</p>
+
+  <hr />
+
+  <h2 id="p18">P18: Dijkstra's Shortest Path</h2>
+  <p><strong>Problem:</strong> Find shortest path from source to all vertices in weighted graph (non-negative weights).</p>
+  <p><strong>Approach:</strong> Priority queue (min-heap) processing nearest unvisited vertex first.</p>
+  <pre><code class="language-python">import heapq
+from collections import defaultdict
+
+def dijkstra(graph, source, n):
+    dist = [float('inf')] * n
+    dist[source] = 0
+    heap = [(0, source)]
+
+    while heap:
+        d, u = heapq.heappop(heap)
+        if d &gt; dist[u]:
+            continue  # stale entry
+        for v, weight in graph[u]:
+            if dist[u] + weight &lt; dist[v]:
+                dist[v] = dist[u] + weight
+                heapq.heappush(heap, (dist[v], v))
+
+    return dist</code></pre>
+  <p><strong>Complexity:</strong> O((V + E) log V) with binary heap, O(V) space.</p>
+  <p><strong>Follow-up:</strong> Negative weights? → Bellman-Ford O(VE). Negative cycles? → Bellman-Ford detects them.</p>
+
+  <hr />
+
+  <h2 id="p19">P19: Union-Find with Path Compression</h2>
+  <p><strong>Problem:</strong> Implement efficient disjoint set with union by rank and path compression.</p>
+  <pre><code class="language-python">class UnionFind:
+    def __init__(self, n):
+        self.parent = list(range(n))
+        self.rank = [0] * n
+
+    def find(self, x):
+        if self.parent[x] != x:
+            self.parent[x] = self.find(self.parent[x])  # path compression
+        return self.parent[x]
+
+    def union(self, x, y):
+        px, py = self.find(x), self.find(y)
+        if px == py:
+            return False
+        # Union by rank
+        if self.rank[px] &lt; self.rank[py]:
+            px, py = py, px
+        self.parent[py] = px
+        if self.rank[px] == self.rank[py]:
+            self.rank[px] += 1
+        return True</code></pre>
+  <p><strong>Complexity:</strong> Nearly O(1) per operation — O(α(n)) amortized (inverse Ackermann).</p>
+  <p><strong>Use cases:</strong> Kruskal's MST, connected components, cycle detection in undirected graphs.</p>
+
+  <hr />
+
+  <h2 id="p20">P20: Maximum Subarray (Kadane's Algorithm)</h2>
+  <p><strong>Problem:</strong> Find contiguous subarray with maximum sum.</p>
+  <p><strong>Approach:</strong> Track current max ending at each position. Reset if negative.</p>
+  <pre><code class="language-python">def max_subarray(nums):
+    max_sum = curr_sum = nums[0]
+    for num in nums[1:]:
+        curr_sum = max(num, curr_sum + num)
+        max_sum = max(max_sum, curr_sum)
+    return max_sum</code></pre>
+  <p><strong>Complexity:</strong> O(n) time, O(1) space.</p>
+  <p><strong>Follow-up:</strong> Return the actual subarray? → Track start/end indices when max_sum updates. Circular array? → max(kadane, total_sum - min_subarray).</p>
+
+  <hr />
+
+  <h2 id="p21">P21: Word Search II (Trie + DFS)</h2>
+  <p><strong>Problem:</strong> Given a board of characters and a list of words, find all words that exist on the board.</p>
+  <p><strong>Approach:</strong> Build Trie from word list, then DFS from each cell matching Trie paths.</p>
+  <pre><code class="language-python">class TrieNode:
+    def __init__(self):
+        self.children = {"{"}{"}"} 
+        self.word = None
+
+def find_words(board, words):
+    root = TrieNode()
+    for word in words:
+        node = root
+        for ch in word:
+            if ch not in node.children:
+                node.children[ch] = TrieNode()
+            node = node.children[ch]
+        node.word = word
+
+    rows, cols = len(board), len(board[0])
+    result = []
+
+    def dfs(r, c, node):
+        ch = board[r][c]
+        if ch not in node.children:
+            return
+        child = node.children[ch]
+        if child.word:
+            result.append(child.word)
+            child.word = None  # avoid duplicates
+
+        board[r][c] = '#'  # mark visited
+        for dr, dc in [(0,1),(0,-1),(1,0),(-1,0)]:
+            nr, nc = r + dr, c + dc
+            if 0 &lt;= nr &lt; rows and 0 &lt;= nc &lt; cols and board[nr][nc] != '#':
+                dfs(nr, nc, child)
+        board[r][c] = ch  # restore
+
+        # Prune: remove leaf nodes
+        if not child.children:
+            del node.children[ch]
+
+    for r in range(rows):
+        for c in range(cols):
+            dfs(r, c, root)
+    return result</code></pre>
+  <p><strong>Complexity:</strong> O(m × n × 4^L) where L = max word length. Trie pruning makes it practical.</p>
+
+  <hr />
+
+  <h2 id="p22">P22: Alien Dictionary (Topological Sort)</h2>
+  <p><strong>Problem:</strong> Given sorted list of words in alien language, derive character ordering.</p>
+  <p><strong>Approach:</strong> Build graph from adjacent word comparisons, then topological sort.</p>
+  <pre><code class="language-python">from collections import defaultdict, deque
+
+def alien_order(words):
+    # Build adjacency and in-degree
+    graph = defaultdict(set)
+    in_degree = {"{"}c: 0 for word in words for c in word{"}"}
+
+    for i in range(len(words) - 1):
+        w1, w2 = words[i], words[i + 1]
+        min_len = min(len(w1), len(w2))
+        # Check invalid case: prefix ordering
+        if len(w1) &gt; len(w2) and w1[:min_len] == w2[:min_len]:
+            return ""
+        for j in range(min_len):
+            if w1[j] != w2[j]:
+                if w2[j] not in graph[w1[j]]:
+                    graph[w1[j]].add(w2[j])
+                    in_degree[w2[j]] += 1
+                break
+
+    # BFS topological sort
+    queue = deque([c for c in in_degree if in_degree[c] == 0])
+    result = []
+    while queue:
+        c = queue.popleft()
+        result.append(c)
+        for neighbor in graph[c]:
+            in_degree[neighbor] -= 1
+            if in_degree[neighbor] == 0:
+                queue.append(neighbor)
+
+    if len(result) != len(in_degree):
+        return ""  # cycle detected
+    return "".join(result)</code></pre>
+  <p><strong>Complexity:</strong> O(C) where C = total characters across all words.</p>
+
+  <hr />
+
+  <h2 id="p23">P23: Best Time to Buy and Sell Stock (State Machine DP)</h2>
+  <p><strong>Problem:</strong> With at most k transactions, find max profit. Generalized stock problem.</p>
+  <p><strong>Approach:</strong> State machine with states: holding, not holding, for each transaction.</p>
+  <pre><code class="language-python">def max_profit(k, prices):
+    if not prices:
+        return 0
+    n = len(prices)
+    if k &gt;= n // 2:
+        # Unlimited transactions
+        return sum(max(0, prices[i+1] - prices[i]) for i in range(n-1))
+
+    # dp[t][0] = max profit with t transactions, not holding
+    # dp[t][1] = max profit with t transactions, holding
+    dp = [[0, float('-inf')] for _ in range(k + 1)]
+
+    for price in prices:
+        for t in range(k, 0, -1):
+            dp[t][0] = max(dp[t][0], dp[t][1] + price)    # sell
+            dp[t][1] = max(dp[t][1], dp[t-1][0] - price)  # buy
+
+    return dp[k][0]</code></pre>
+  <p><strong>Complexity:</strong> O(nk) time, O(k) space.</p>
+  <p><strong>Follow-up:</strong> With cooldown? → Add a "cooldown" state: can't buy on day after selling.</p>
+
+  <hr />
+
+  <h2 id="p24">P24: Edit Distance (2D DP)</h2>
+  <p><strong>Problem:</strong> Find minimum operations (insert, delete, replace) to convert word1 to word2.</p>
+  <p><strong>Approach:</strong> Classic 2D DP. dp[i][j] = edit distance of word1[0:i] and word2[0:j].</p>
+  <pre><code class="language-python">def min_distance(word1, word2):
+    m, n = len(word1), len(word2)
+    dp = [[0] * (n + 1) for _ in range(m + 1)]
+
+    for i in range(m + 1):
+        dp[i][0] = i
+    for j in range(n + 1):
+        dp[0][j] = j
+
+    for i in range(1, m + 1):
+        for j in range(1, n + 1):
+            if word1[i-1] == word2[j-1]:
+                dp[i][j] = dp[i-1][j-1]
+            else:
+                dp[i][j] = 1 + min(
+                    dp[i-1][j],    # delete
+                    dp[i][j-1],    # insert
+                    dp[i-1][j-1]   # replace
+                )
+    return dp[m][n]</code></pre>
+  <p><strong>Complexity:</strong> O(mn) time, O(mn) space. Can optimize to O(min(m,n)) space with rolling array.</p>
+  <p><strong>Follow-up:</strong> What if operations have different costs? → Modify the min() weights accordingly.</p>
+
+  <hr />
+
+  <h2 id="p25">P25: Design Twitter (OOP + Heap)</h2>
+  <p><strong>Problem:</strong> Design a simplified Twitter with postTweet, getNewsFeed, follow, unfollow.</p>
+  <p><strong>Approach:</strong> User → set of followees. Each user has tweet list. News feed = merge k sorted lists (heaps).</p>
+  <pre><code class="language-python">import heapq
+from collections import defaultdict
+
+class Twitter:
+    def __init__(self):
+        self.time = 0
+        self.tweets = defaultdict(list)   # userId -&gt; [(time, tweetId)]
+        self.following = defaultdict(set)  # userId -&gt; set of followees
+
+    def post_tweet(self, user_id, tweet_id):
+        self.tweets[user_id].append((self.time, tweet_id))
+        self.time += 1
+
+    def get_news_feed(self, user_id):
+        # Merge latest 10 from user + followees
+        users = self.following[user_id] | {"{"}user_id{"}"}
+        heap = []
+        for uid in users:
+            if self.tweets[uid]:
+                idx = len(self.tweets[uid]) - 1
+                t, tid = self.tweets[uid][idx]
+                heap.append((-t, tid, uid, idx))
+        heapq.heapify(heap)
+
+        feed = []
+        while heap and len(feed) &lt; 10:
+            neg_t, tid, uid, idx = heapq.heappop(heap)
+            feed.append(tid)
+            if idx &gt; 0:
+                t2, tid2 = self.tweets[uid][idx - 1]
+                heapq.heappush(heap, (-t2, tid2, uid, idx - 1))
+        return feed
+
+    def follow(self, follower_id, followee_id):
+        self.following[follower_id].add(followee_id)
+
+    def unfollow(self, follower_id, followee_id):
+        self.following[follower_id].discard(followee_id)</code></pre>
+  <p><strong>Complexity:</strong> postTweet O(1), getNewsFeed O(F·log F) where F = followees, follow/unfollow O(1).</p>
+  <p><strong>Follow-up:</strong> How would you scale this? → Fan-out-on-write for normal users, fan-out-on-read for celebrities (hybrid approach).</p>
+
 </DocsLayout>

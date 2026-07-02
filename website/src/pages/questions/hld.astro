@@ -2,13 +2,14 @@
 import DocsLayout from "../../layouts/DocsLayout.astro";
 ---
 <DocsLayout title="HLD System Design (25 Systems)" section="Question Banks" description="25 system design problems with architecture diagrams, trade-offs, and scaling strategies">
+
   <h2 id="systems">Systems List</h2>
   <ol>
-    <li>URL Shortener (TinyURL)</li>
-    <li>Twitter / News Feed</li>
-    <li>WhatsApp / Chat System</li>
-    <li>YouTube / Video Streaming</li>
-    <li>Uber / Ride Sharing</li>
+    <li><a href="#hld1">URL Shortener (TinyURL)</a></li>
+    <li><a href="#hld2">Twitter / News Feed</a></li>
+    <li><a href="#hld3">WhatsApp / Chat System</a></li>
+    <li><a href="#hld4">YouTube / Video Streaming</a></li>
+    <li><a href="#hld5">Uber / Ride Sharing</a></li>
     <li>Notification System</li>
     <li>Rate Limiter (Distributed)</li>
     <li>Search Autocomplete</li>
@@ -21,7 +22,7 @@ import DocsLayout from "../../layouts/DocsLayout.astro";
     <li>E-commerce (Amazon-scale)</li>
     <li>Typeahead Suggestion</li>
     <li>Ticket Booking (Concurrency)</li>
-    <li>Logging & Monitoring (ELK)</li>
+    <li>Logging &amp; Monitoring (ELK)</li>
     <li>Content Delivery Network</li>
     <li>Ad Click Aggregation</li>
     <li>Collaborative Editor (Google Docs)</li>
@@ -30,4 +31,565 @@ import DocsLayout from "../../layouts/DocsLayout.astro";
     <li>Job Scheduler</li>
     <li>Proximity Service (Yelp)</li>
   </ol>
+
+  <hr />
+
+  <!-- ============================================ -->
+  <!-- HLD 1: URL SHORTENER -->
+  <!-- ============================================ -->
+  <h2 id="hld1">1. URL Shortener (TinyURL) — Full Design</h2>
+
+  <h3>Requirements</h3>
+  <p><strong>Functional:</strong></p>
+  <ul>
+    <li>Given a long URL, generate a short unique URL</li>
+    <li>Redirect short URL → original URL</li>
+    <li>Custom short links (optional)</li>
+    <li>Link expiration (configurable TTL)</li>
+    <li>Analytics: click count, geographic data</li>
+  </ul>
+  <p><strong>Non-Functional:</strong></p>
+  <ul>
+    <li>Highly available (read-heavy system)</li>
+    <li>Low latency redirection (&lt; 100ms)</li>
+    <li>Short URLs should not be predictable (security)</li>
+  </ul>
+
+  <h3>Back-of-Envelope Estimation</h3>
+  <pre><code>Write: 100M new URLs/month = ~40 URLs/sec
+Read:Write ratio = 100:1 → 4000 reads/sec
+Storage: 100M × 12 months × 5 years = 6B records
+Each record ~500 bytes → 6B × 500B = 3TB
+Cache: 20% of daily reads → ~170GB (fits in memory cluster)</code></pre>
+
+  <h3>API Design</h3>
+  <pre><code>POST /api/v1/shorten
+  Body: {"{"} "long_url": "https://...", "custom_alias": "my-link", "expires_at": "2025-12-31" {"}"}
+  Response: {"{"} "short_url": "https://tiny.url/abc123", "expires_at": "..." {"}"}
+
+GET /:shortCode
+  Response: 301 Redirect (permanent) or 302 (temporary, better for analytics)
+  Header: Location: https://original-long-url.com
+
+GET /api/v1/stats/:shortCode
+  Response: {"{"} "clicks": 15420, "created_at": "...", "top_countries": [...] {"}"}</code></pre>
+
+  <h3>Database Schema</h3>
+  <pre><code>urls table:
+┌─────────────┬──────────────────────────────────────────┐
+│ short_code  │ VARCHAR(7) PRIMARY KEY                   │
+│ long_url    │ TEXT NOT NULL                            │
+│ user_id     │ BIGINT (nullable)                       │
+│ created_at  │ TIMESTAMP                               │
+│ expires_at  │ TIMESTAMP (nullable)                    │
+│ click_count │ BIGINT DEFAULT 0                        │
+└─────────────┴──────────────────────────────────────────┘
+
+Index: idx_long_url (long_url) for deduplication lookup</code></pre>
+
+  <h3>Encoding Algorithm: Base62</h3>
+  <pre><code>Characters: [a-z, A-Z, 0-9] = 62 chars
+7 chars → 62^7 = 3.5 trillion unique URLs
+
+Approach 1: Counter-based (distributed counter via ZooKeeper ranges)
+Approach 2: MD5/SHA256 hash → take first 7 chars of base62 encoding
+Approach 3: Pre-generate keys (Key Generation Service - KGS)
+
+KGS approach (recommended):
+- Pre-generate all 7-char keys, store in DB
+- Two tables: unused_keys, used_keys
+- App server fetches batch (e.g., 1000 keys) into memory
+- No collision, no coordination needed</code></pre>
+
+  <h3>High-Level Architecture</h3>
+  <pre><code>┌──────────┐     ┌──────────────┐     ┌──────────┐
+│  Client  │────▶│ Load Balancer│────▶│ App Server│
+└──────────┘     └──────────────┘     └─────┬────┘
+                                            │
+                      ┌─────────────────────┼─────────────────┐
+                      ▼                     ▼                 ▼
+              ┌──────────────┐    ┌──────────────┐   ┌──────────────┐
+              │ Cache (Redis)│    │  Database    │   │     KGS      │
+              │  (read path) │    │ (write path) │   │(Key Gen Svc) │
+              └──────────────┘    └──────────────┘   └──────────────┘
+
+Read Path: Client → LB → App → Cache (hit?) → DB (miss) → 301 Redirect
+Write Path: Client → LB → App → KGS (get key) → DB (store mapping)</code></pre>
+
+  <h3>Scaling Considerations</h3>
+  <ul>
+    <li><strong>Cache:</strong> Redis cluster for hot URLs. Cache eviction: LRU. Hit ratio expected ~80%</li>
+    <li><strong>Database:</strong> Partition by first char of short_code (range-based sharding)</li>
+    <li><strong>Read replicas:</strong> Read-heavy → multiple read replicas behind LB</li>
+    <li><strong>CDN:</strong> For extremely popular URLs, CDN can cache 301 redirects</li>
+    <li><strong>Rate limiting:</strong> Prevent abuse on write endpoint</li>
+  </ul>
+
+  <h3>Interviewer Evaluation Points</h3>
+  <ul>
+    <li>Does candidate discuss collision handling in hash-based approach?</li>
+    <li>301 vs 302: trade-off between caching and analytics</li>
+    <li>How to handle expired URLs (lazy deletion vs cron job)</li>
+    <li>Custom alias: race condition on uniqueness check</li>
+  </ul>
+
+  <hr />
+
+  <!-- ============================================ -->
+  <!-- HLD 2: TWITTER NEWS FEED -->
+  <!-- ============================================ -->
+  <h2 id="hld2">2. Twitter News Feed — Full Design</h2>
+
+  <h3>Requirements</h3>
+  <p><strong>Functional:</strong></p>
+  <ul>
+    <li>Post tweets (text, images, video links)</li>
+    <li>Follow/unfollow users</li>
+    <li>News feed: personalized timeline from followed users</li>
+    <li>Like, retweet, reply</li>
+  </ul>
+  <p><strong>Non-Functional:</strong></p>
+  <ul>
+    <li>News feed generation &lt; 200ms</li>
+    <li>Eventual consistency acceptable for feed</li>
+    <li>Handle celebrity accounts (millions of followers)</li>
+  </ul>
+
+  <h3>Back-of-Envelope Estimation</h3>
+  <pre><code>DAU: 300M users
+Tweets/day: 500M
+Avg follows: 200
+Feed reads: 300M × 5 reads/day = 1.5B reads/day = 17K reads/sec
+Tweet writes: 500M/day = 6K writes/sec</code></pre>
+
+  <h3>API Design</h3>
+  <pre><code>POST /api/v1/tweet
+  Body: {"{"} "content": "Hello world", "media_ids": [...] {"}"}
+
+GET /api/v1/feed?page_token=xxx&amp;limit=20
+  Response: {"{"} "tweets": [...], "next_page_token": "..." {"}"}
+
+POST /api/v1/follow
+  Body: {"{"} "followee_id": 12345 {"}"}</code></pre>
+
+  <h3>Fan-out Strategies</h3>
+  <pre><code>Fan-out-on-WRITE (Push model):
+- When user tweets, push to ALL followers' feed caches
+- Pro: Feed read is O(1) — just read pre-built cache
+- Con: Celebrity with 50M followers → 50M writes per tweet (slow)
+
+Fan-out-on-READ (Pull model):
+- When user requests feed, fetch latest from each followee
+- Pro: No write amplification
+- Con: Slow feed generation (merge K sorted lists at read time)
+
+HYBRID (Twitter's actual approach):
+- Normal users (&lt;10K followers): fan-out-on-write
+- Celebrities (&gt;10K followers): fan-out-on-read
+- Feed = pre-built cache + real-time merge of celebrity tweets</code></pre>
+
+  <h3>High-Level Architecture</h3>
+  <pre><code>┌──────────┐     ┌─────────────┐     ┌──────────────────┐
+│  Client  │────▶│ API Gateway │────▶│  Tweet Service    │
+└──────────┘     └─────────────┘     │ (write to DB +   │
+                                     │  fan-out queue)   │
+                                     └────────┬─────────┘
+                                              │
+                       ┌──────────────────────┼────────────────┐
+                       ▼                      ▼                ▼
+              ┌────────────────┐    ┌─────────────────┐  ┌──────────┐
+              │ Fan-out Service│    │  Tweet Store    │  │  Graph   │
+              │ (push to feed  │    │ (tweets table)  │  │  Service │
+              │  caches)       │    └─────────────────┘  │(follows) │
+              └───────┬────────┘                         └──────────┘
+                      ▼
+              ┌────────────────┐
+              │  Feed Cache    │
+              │ (Redis sorted  │
+              │  sets per user)│
+              └────────────────┘
+
+Feed Read Path:
+Client → API → Feed Service → Redis (pre-built feed) + Celebrity tweets merge</code></pre>
+
+  <h3>Database Schema</h3>
+  <pre><code>tweets: (tweet_id PK, user_id, content, media_urls, created_at)
+users: (user_id PK, username, follower_count, is_celebrity)
+follows: (follower_id, followee_id, created_at) — indexed both ways
+feed_cache: Redis Sorted Set per user_id, score=timestamp, value=tweet_id</code></pre>
+
+  <h3>Scaling Considerations</h3>
+  <ul>
+    <li><strong>Celebrity problem:</strong> Hybrid fan-out avoids write storms</li>
+    <li><strong>Feed cache:</strong> Only store last 800 tweet IDs per user (Redis sorted set with ZREMRANGEBYRANK)</li>
+    <li><strong>Sharding:</strong> Tweets by user_id, feed cache by user_id</li>
+    <li><strong>Ranking:</strong> ML model scores tweets for relevance (not just chronological)</li>
+  </ul>
+
+  <h3>Interviewer Evaluation Points</h3>
+  <ul>
+    <li>Fan-out trade-off discussion (push vs pull vs hybrid)</li>
+    <li>How to handle user unfollowing (remove from feed cache?)</li>
+    <li>Thundering herd on celebrity tweet</li>
+    <li>Feed pagination: cursor-based vs offset-based</li>
+  </ul>
+
+  <hr />
+
+  <!-- ============================================ -->
+  <!-- HLD 3: WHATSAPP CHAT -->
+  <!-- ============================================ -->
+  <h2 id="hld3">3. WhatsApp Chat System — Full Design</h2>
+
+  <h3>Requirements</h3>
+  <p><strong>Functional:</strong></p>
+  <ul>
+    <li>1:1 messaging and group messaging (up to 256 members)</li>
+    <li>Message delivery statuses: sent, delivered, read</li>
+    <li>Online/offline presence indicators</li>
+    <li>Media sharing (images, video, documents)</li>
+    <li>End-to-end encryption</li>
+  </ul>
+  <p><strong>Non-Functional:</strong></p>
+  <ul>
+    <li>Real-time delivery (&lt; 100ms for online users)</li>
+    <li>At-least-once delivery guarantee</li>
+    <li>Support 2B+ users, 100B messages/day</li>
+    <li>Message ordering within a conversation</li>
+  </ul>
+
+  <h3>Back-of-Envelope Estimation</h3>
+  <pre><code>Users: 2B total, 500M DAU
+Messages: 100B/day = 1.15M messages/sec
+Avg message size: 100 bytes text → 10TB/day text
+Media: 20% messages have media, avg 200KB → 4PB/day
+WebSocket connections: 500M concurrent</code></pre>
+
+  <h3>API Design</h3>
+  <pre><code>WebSocket Connection:
+  ws://chat.app/ws?token=jwt_token
+
+Send Message:
+  {"{"} "type": "message", "to": "user_id", "content": "hello", "msg_id": "uuid" {"}"}
+
+Delivery Ack:
+  {"{"} "type": "ack", "msg_id": "uuid", "status": "delivered" {"}"}
+
+Presence Update:
+  {"{"} "type": "presence", "status": "online", "last_seen": "2024-01-01T..." {"}"}
+
+REST (offline/fallback):
+  GET /api/v1/messages?conversation_id=xxx&amp;since=timestamp
+  POST /api/v1/messages (for offline queue)</code></pre>
+
+  <h3>High-Level Architecture</h3>
+  <pre><code>┌──────────┐     ┌─────────────┐     ┌──────────────────────────┐
+│  Client  │◀───▶│ WebSocket   │◀───▶│   Chat Service           │
+│  (App)   │     │ Gateway     │     │  (routing + delivery)    │
+└──────────┘     └─────────────┘     └────────────┬─────────────┘
+                                                  │
+              ┌───────────────────────────────────┼──────────────────┐
+              ▼                    ▼               ▼                  ▼
+    ┌──────────────┐    ┌──────────────┐  ┌──────────────┐  ┌────────────┐
+    │ Session Store│    │ Message Queue│  │ Message DB   │  │  Presence  │
+    │ (userId→     │    │ (Kafka for   │  │ (Cassandra/  │  │  Service   │
+    │  serverId)   │    │  offline)    │  │  HBase)      │  │  (Redis)   │
+    └──────────────┘    └──────────────┘  └──────────────┘  └────────────┘
+
+Message Flow:
+1. User A sends msg via WebSocket to their connected gateway
+2. Chat Service looks up User B's gateway in Session Store
+3. If B online: route directly to B's WebSocket gateway
+4. If B offline: store in Message Queue + DB, deliver on reconnect</code></pre>
+
+  <h3>Message Delivery Guarantees</h3>
+  <pre><code>Sent (✓):     Server received and persisted message
+Delivered (✓✓): Recipient's device received the message
+Read (✓✓ blue): Recipient opened the conversation
+
+Implementation:
+- Client generates msg_id (UUID) for idempotency
+- Server ACKs with "sent" status
+- Recipient device sends "delivered" ACK back through WebSocket
+- "Read" ACK sent when user opens chat
+- Retries: client retries if no ACK within timeout (exponential backoff)</code></pre>
+
+  <h3>Group Messaging</h3>
+  <pre><code>- Group members stored in DB with group_id
+- On group message: fan-out to all member WebSocket connections
+- Optimization: only fan-out to online members, offline get from queue
+- Ordering: server assigns monotonic sequence number per group
+- Large groups: shard delivery across multiple workers</code></pre>
+
+  <h3>Scaling Considerations</h3>
+  <ul>
+    <li><strong>WebSocket servers:</strong> 500M connections / 1M per server = 500 servers minimum</li>
+    <li><strong>Session routing:</strong> Consistent hashing for user→server mapping in Redis</li>
+    <li><strong>Message storage:</strong> Cassandra (write-heavy, partition by conversation_id)</li>
+    <li><strong>E2E encryption:</strong> Signal Protocol (Double Ratchet). Server never sees plaintext</li>
+    <li><strong>Presence:</strong> Heartbeat-based. Batch presence updates to reduce fan-out</li>
+  </ul>
+
+  <h3>Interviewer Evaluation Points</h3>
+  <ul>
+    <li>WebSocket vs long polling vs SSE: trade-offs</li>
+    <li>How to handle network partitions (message ordering)</li>
+    <li>Group message fan-out efficiency</li>
+    <li>End-to-end encryption key exchange mechanism</li>
+  </ul>
+
+  <hr />
+
+  <!-- ============================================ -->
+  <!-- HLD 4: YOUTUBE VIDEO STREAMING -->
+  <!-- ============================================ -->
+  <h2 id="hld4">4. YouTube Video Streaming — Full Design</h2>
+
+  <h3>Requirements</h3>
+  <p><strong>Functional:</strong></p>
+  <ul>
+    <li>Upload videos (support multiple formats)</li>
+    <li>Stream videos with adaptive bitrate</li>
+    <li>Search and discover videos</li>
+    <li>Like, comment, subscribe</li>
+    <li>View count and recommendations</li>
+  </ul>
+  <p><strong>Non-Functional:</strong></p>
+  <ul>
+    <li>Smooth playback (buffer &lt; 200ms at start)</li>
+    <li>Support 1B+ DAU</li>
+    <li>Global delivery via CDN</li>
+    <li>Upload processing within minutes</li>
+  </ul>
+
+  <h3>Back-of-Envelope Estimation</h3>
+  <pre><code>DAU: 1B users watching avg 5 videos/day = 5B video views/day
+Uploads: 500 hours of video uploaded per minute
+Storage: 500hrs × 60min × 5 resolutions × 3Mbps = ~56TB/day new content
+Bandwidth: 5B views × 10 min avg × 4Mbps = 2.5 Exabytes/day outbound
+CDN: Must serve from edge locations close to users</code></pre>
+
+  <h3>API Design</h3>
+  <pre><code>POST /api/v1/videos/upload
+  Headers: Content-Type: multipart/form-data
+  Body: video file + metadata (title, description, tags)
+  Response: {"{"} "video_id": "abc", "status": "processing" {"}"}
+
+GET /api/v1/videos/:id/manifest
+  Response: HLS/DASH manifest with multiple quality levels
+
+GET /api/v1/videos/:id/stream?quality=720p&amp;segment=5
+  Response: Video segment (served from CDN)
+
+GET /api/v1/feed/recommendations?user_id=xxx
+  Response: {"{"} "videos": [...] {"}"}</code></pre>
+
+  <h3>High-Level Architecture</h3>
+  <pre><code>UPLOAD PATH:
+┌────────┐    ┌───────────┐    ┌────────────────┐    ┌──────────────┐
+│ Client │───▶│ Upload    │───▶│ Message Queue  │───▶│ Transcoding  │
+│        │    │ Service   │    │ (processing    │    │ Workers      │
+└────────┘    └───────────┘    │  pipeline)     │    │ (720p,1080p, │
+                               └────────────────┘    │  480p,360p)  │
+                                                     └──────┬───────┘
+                                                            ▼
+                                                     ┌──────────────┐
+                                                     │ Object Store │
+                                                     │ (S3/GCS)     │
+                                                     └──────┬───────┘
+                                                            ▼
+                                                     ┌──────────────┐
+                                                     │     CDN      │
+                                                     └──────────────┘
+
+STREAMING PATH:
+┌────────┐    ┌──────────┐    ┌──────────────┐
+│ Client │───▶│   CDN    │───▶│ Origin Store │
+│(player)│    │  (Edge)  │    │ (cache miss) │
+└────────┘    └──────────┘    └──────────────┘
+
+METADATA PATH:
+┌────────┐    ┌────────────┐    ┌─────────────────┐
+│ Client │───▶│ API Server │───▶│ Video Metadata  │
+└────────┘    └────────────┘    │ DB (MySQL shard) │
+                                └─────────────────┘</code></pre>
+
+  <h3>Upload Pipeline (Transcoding)</h3>
+  <pre><code>1. Client uploads raw video → Upload Service → Object Store (raw)
+2. Upload Service publishes event to Message Queue
+3. Transcoding workers:
+   - Split video into segments (10s each)
+   - Encode each segment into multiple resolutions: 360p, 480p, 720p, 1080p, 4K
+   - Generate thumbnails at key frames
+   - Create HLS/DASH manifest file
+4. Store processed segments in Object Store
+5. Push to CDN for edge caching
+6. Update video metadata: status = "ready"</code></pre>
+
+  <h3>View Counting at Scale</h3>
+  <pre><code>Challenge: 5B views/day = 58K writes/sec (too much for single counter)
+
+Approach:
+1. Batch counting: aggregate views in memory, flush every 30s
+2. Use Kafka to decouple: view events → Kafka → counter service
+3. Redis INCR for real-time approximate count
+4. Periodic reconciliation with DB for accurate count
+5. Deduplication: per-user cooldown (don't count rapid refreshes)</code></pre>
+
+  <h3>Scaling Considerations</h3>
+  <ul>
+    <li><strong>CDN:</strong> Cache popular videos at edge. Long-tail videos served from origin</li>
+    <li><strong>Adaptive bitrate:</strong> Client switches quality based on bandwidth (HLS/DASH protocol)</li>
+    <li><strong>Transcoding:</strong> Parallelized per segment. Spot instances for cost optimization</li>
+    <li><strong>Storage tiering:</strong> Hot (SSD) → Warm (HDD) → Cold (Glacier) based on view frequency</li>
+    <li><strong>Recommendations:</strong> Collaborative filtering + content-based, served from ML model</li>
+  </ul>
+
+  <h3>Interviewer Evaluation Points</h3>
+  <ul>
+    <li>Upload pipeline: async processing, failure handling, resumable uploads</li>
+    <li>CDN cache invalidation strategy</li>
+    <li>Copyright detection (Content ID system)</li>
+    <li>View count consistency vs availability trade-off</li>
+  </ul>
+
+  <hr />
+
+  <!-- ============================================ -->
+  <!-- HLD 5: UBER RIDE SHARING -->
+  <!-- ============================================ -->
+  <h2 id="hld5">5. Uber Ride Sharing — Full Design</h2>
+
+  <h3>Requirements</h3>
+  <p><strong>Functional:</strong></p>
+  <ul>
+    <li>Riders request rides with pickup and dropoff locations</li>
+    <li>Match riders with nearby available drivers</li>
+    <li>Real-time driver location tracking</li>
+    <li>ETA calculation</li>
+    <li>Dynamic/surge pricing</li>
+    <li>Trip history and payments</li>
+  </ul>
+  <p><strong>Non-Functional:</strong></p>
+  <ul>
+    <li>Match within 10 seconds</li>
+    <li>Location updates every 3-5 seconds from drivers</li>
+    <li>Support millions of concurrent drivers</li>
+    <li>High availability in all regions</li>
+  </ul>
+
+  <h3>Back-of-Envelope Estimation</h3>
+  <pre><code>Active drivers: 5M concurrent (sending location every 4s)
+Location updates: 5M / 4s = 1.25M writes/sec
+Ride requests: 20M trips/day = 230 requests/sec (peak: 5x = 1150/sec)
+Storage per location update: ~50 bytes (lat, lng, timestamp, driver_id)
+Daily location data: 1.25M × 86400 × 50B = 5.4TB/day</code></pre>
+
+  <h3>API Design</h3>
+  <pre><code>POST /api/v1/rides/request
+  Body: {"{"} "pickup": {"{"}"lat": 37.7, "lng": -122.4{"}"}, "dropoff": {"{"}"lat": 37.8, "lng": -122.3{"}"}, "ride_type": "uberX" {"}"}
+  Response: {"{"} "ride_id": "uuid", "estimated_fare": 25.50, "eta_minutes": 4 {"}"}
+
+PUT /api/v1/drivers/:id/location
+  Body: {"{"} "lat": 37.7749, "lng": -122.4194, "heading": 90, "speed": 30 {"}"}
+
+GET /api/v1/rides/:id/track
+  Response: {"{"} "driver_location": {...}, "eta_minutes": 3, "status": "en_route" {"}"}
+
+WebSocket: /ws/ride/:ride_id (real-time updates for rider)
+WebSocket: /ws/driver/:driver_id (new ride requests for driver)</code></pre>
+
+  <h3>Geospatial Indexing</h3>
+  <pre><code>Challenge: Find nearest K drivers to a given point efficiently
+
+Option 1: QuadTree
+- Recursively divide space into 4 quadrants
+- Each leaf holds ≤ N drivers
+- Search: traverse from root, check neighboring cells
+- Dynamic: need to rebalance as drivers move
+
+Option 2: Geohash
+- Encode lat/lng into string (e.g., "9q8yy")
+- Nearby points share common prefixes
+- Use Redis with geohash keys for fast lookup
+- Limitation: boundary issues (adjacent cells have different prefixes)
+
+Option 3: H3 (Uber's choice)
+- Hexagonal hierarchical spatial index
+- Consistent neighbors (no edge/corner issues)
+- Resolution levels: city → block → street
+- Used for: driver matching, surge pricing zones, ETA calculation
+
+Implementation with Redis:
+  GEOADD drivers lng lat driver_id
+  GEORADIUS drivers lng lat 5 km COUNT 20 ASC</code></pre>
+
+  <h3>High-Level Architecture</h3>
+  <pre><code>┌──────────┐      ┌─────────────┐      ┌─────────────────┐
+│  Rider   │─────▶│ API Gateway │─────▶│  Trip Service   │
+│   App    │      │  + LB       │      │  (ride lifecycle)│
+└──────────┘      └─────────────┘      └────────┬────────┘
+                                                │
+┌──────────┐      ┌─────────────┐              │
+│  Driver  │─────▶│  Location   │              │
+│   App    │      │  Service    │              │
+└──────────┘      └──────┬──────┘              │
+                         ▼                     ▼
+              ┌──────────────────┐    ┌──────────────────┐
+              │ Geospatial Index │    │ Matching Service │
+              │ (Redis/H3 cells) │◀──▶│ (find drivers,   │
+              └──────────────────┘    │  assign rides)   │
+                                      └────────┬─────────┘
+                                               │
+                    ┌──────────────────────────┼──────────────────┐
+                    ▼                          ▼                  ▼
+           ┌──────────────┐          ┌──────────────┐   ┌──────────────┐
+           │ ETA Service  │          │ Pricing Svc  │   │  Payment     │
+           │ (route calc) │          │ (surge algo) │   │  Service     │
+           └──────────────┘          └──────────────┘   └──────────────┘</code></pre>
+
+  <h3>Matching Algorithm</h3>
+  <pre><code>1. Rider requests ride → Trip Service
+2. Query geospatial index: find drivers within 5km radius
+3. Filter: available, correct vehicle type, heading towards rider
+4. Rank candidates by:
+   - Distance (primary)
+   - ETA (considering traffic, not just straight-line)
+   - Driver rating
+   - Acceptance rate
+5. Send request to top driver → wait 15s for acceptance
+6. If rejected/timeout → try next driver
+7. If matched → transition ride to "DRIVER_EN_ROUTE"</code></pre>
+
+  <h3>Surge Pricing</h3>
+  <pre><code>Trigger: demand/supply ratio per H3 cell (hexagonal zone)
+- If ratio &gt; threshold → apply multiplier (1.2x - 3.0x)
+- Calculated every 2 minutes per zone
+- Smoothing: gradual increase/decrease to avoid oscillation
+- Display to rider before confirming (transparency)
+
+Factors:
+- Number of ride requests in zone (demand)
+- Number of available drivers in zone (supply)
+- Historical patterns (events, weather, time of day)
+- Queue depth (pending unmatched requests)</code></pre>
+
+  <h3>Scaling Considerations</h3>
+  <ul>
+    <li><strong>Location ingestion:</strong> Kafka for 1.25M writes/sec, partitioned by city</li>
+    <li><strong>Geospatial:</strong> Sharded by city/region. Each city fits in single Redis cluster</li>
+    <li><strong>ETA:</strong> Pre-computed road graph + real-time traffic overlay. Dijkstra with traffic weights</li>
+    <li><strong>Consistency:</strong> Ride assignment must be strongly consistent (avoid double-booking driver)</li>
+    <li><strong>Regional deployment:</strong> Each city/country has local infrastructure for latency</li>
+  </ul>
+
+  <h3>Interviewer Evaluation Points</h3>
+  <ul>
+    <li>Geospatial index choice and trade-offs (QuadTree vs Geohash vs H3)</li>
+    <li>Real-time location at scale (1M+ updates/sec)</li>
+    <li>Matching algorithm fairness and efficiency</li>
+    <li>Surge pricing: economic model + technical implementation</li>
+    <li>Handling driver going offline mid-trip (reassignment)</li>
+  </ul>
+
 </DocsLayout>

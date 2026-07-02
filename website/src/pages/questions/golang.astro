@@ -1,15 +1,418 @@
 ---
 import DocsLayout from "../../layouts/DocsLayout.astro";
 ---
-<DocsLayout title="Go Coding & Output" section="Question Banks" description="20 Go interview questions on goroutines, channels, interfaces, and context propagation">
-  <h2 id="topics">Key Topics</h2>
+<DocsLayout title="Go Coding & Output" section="Question Banks" description="15 Go interview questions on goroutines, channels, interfaces, concurrency, and common gotchas">
+
+  <h2 id="q1">Q1: Goroutine Leak Detection</h2>
+  <p><strong>Problem:</strong> Identify the goroutine leak and fix it.</p>
+  <pre><code class="language-go">// BUGGY: goroutine never returns
+func fetchData() {"{"}
+    ch := make(chan string)
+    go func() {"{"}
+        // Simulating work that might hang
+        result := longRunningCall()
+        ch &lt;- result
+    {"}"}()
+    select {"{"}
+    case r := &lt;-ch:
+        fmt.Println(r)
+    case &lt;-time.After(1 * time.Second):
+        fmt.Println("timeout")
+        // goroutine still blocked on ch &lt;- result!
+    {"}"}
+{"}"}</code></pre>
+  <p><strong>Answer:</strong> The goroutine leaks because after timeout, nobody reads from <code>ch</code>. Fix with context cancellation:</p>
+  <pre><code class="language-go">func fetchData(ctx context.Context) {"{"}
+    ctx, cancel := context.WithTimeout(ctx, 1*time.Second)
+    defer cancel()
+
+    ch := make(chan string, 1) // buffered so goroutine won't block
+    go func() {"{"}
+        result := longRunningCall()
+        select {"{"}
+        case ch &lt;- result:
+        case &lt;-ctx.Done():
+            return // exit cleanly
+        {"}"}
+    {"}"}()
+
+    select {"{"}
+    case r := &lt;-ch:
+        fmt.Println(r)
+    case &lt;-ctx.Done():
+        fmt.Println("timeout")
+    {"}"}
+{"}"}</code></pre>
+  <p><strong>Key Insight:</strong> Always provide goroutines an exit path. Use buffered channels or context cancellation.</p>
+  <p><strong>Follow-up:</strong> How would you detect goroutine leaks in tests? → Use <code>goleak</code> package from Uber.</p>
+
+  <hr />
+
+  <h2 id="q2">Q2: Channel Deadlock</h2>
+  <p><strong>Problem:</strong> Why does this deadlock?</p>
+  <pre><code class="language-go">func main() {"{"}
+    ch := make(chan int)
+    ch &lt;- 42 // blocks forever: no receiver
+    fmt.Println(&lt;-ch)
+{"}"}</code></pre>
+  <p><strong>Answer:</strong> Unbuffered channels block the sender until a receiver is ready. Since send and receive are in the same goroutine sequentially, the send blocks forever. Runtime detects all goroutines sleeping → <code>fatal error: all goroutines are asleep - deadlock!</code></p>
+  <p><strong>Fix:</strong> Either use a buffered channel <code>make(chan int, 1)</code> or put the send in a separate goroutine.</p>
+  <pre><code class="language-go">func main() {"{"}
+    ch := make(chan int)
+    go func() {"{"} ch &lt;- 42 {"}"}()
+    fmt.Println(&lt;-ch) // 42
+{"}"}</code></pre>
+  <p><strong>Follow-up:</strong> What's the difference between <code>make(chan int)</code> and <code>make(chan int, 0)</code>? → Identical. Both are unbuffered.</p>
+
+  <hr />
+
+  <h2 id="q3">Q3: Slice Append Gotcha</h2>
+  <p><strong>Problem:</strong> What does this print?</p>
+  <pre><code class="language-go">func main() {"{"}
+    a := make([]int, 0, 5)
+    a = append(a, 1, 2, 3)
+    b := append(a, 4)
+    c := append(a, 5)
+    fmt.Println(b[3], c[3]) // ?
+{"}"}</code></pre>
+  <p><strong>Answer:</strong> Prints <code>5 5</code>. Since <code>a</code> has capacity 5 and length 3, both <code>append(a, 4)</code> and <code>append(a, 5)</code> write to the same underlying array index 3. The second append overwrites the first.</p>
+  <p><strong>Fix:</strong> Use full slice expression to limit capacity: <code>b := append(a[:len(a):len(a)], 4)</code></p>
+  <p><strong>Key Insight:</strong> Slices share underlying arrays when capacity allows. Use <code>a[low:high:max]</code> three-index slice to restrict capacity.</p>
+
+  <hr />
+
+  <h2 id="q4">Q4: Interface Nil Check Trap</h2>
+  <p><strong>Problem:</strong> Why does this NOT print "nil"?</p>
+  <pre><code class="language-go">type MyError struct {"{"}
+    Msg string
+{"}"}
+func (e *MyError) Error() string {"{"} return e.Msg {"}"}
+
+func getError() error {"{"}
+    var err *MyError = nil
+    return err // returns (*MyError)(nil), not nil interface
+{"}"}
+
+func main() {"{"}
+    if err := getError(); err != nil {"{"}
+        fmt.Println("not nil!") // This prints!
+    {"}"}
+{"}"}</code></pre>
+  <p><strong>Answer:</strong> An interface in Go is a <code>(type, value)</code> pair. Returning a typed nil pointer wraps it as <code>(*MyError, nil)</code> which is NOT a nil interface. A nil interface has both type and value as nil.</p>
+  <p><strong>Fix:</strong> Return the interface type directly:</p>
+  <pre><code class="language-go">func getError() error {"{"}
+    var err *MyError = nil
+    if err == nil {"{"}
+        return nil // returns nil interface
+    {"}"}
+    return err
+{"}"}</code></pre>
+
+  <hr />
+
+  <h2 id="q5">Q5: Defer Evaluation Timing</h2>
+  <p><strong>Problem:</strong> What does this print?</p>
+  <pre><code class="language-go">func main() {"{"}
+    for i := 0; i &lt; 3; i++ {"{"}
+        defer fmt.Println(i)
+    {"}"}
+{"}"}</code></pre>
+  <p><strong>Answer:</strong> Prints <code>2 1 0</code>. Defers execute LIFO. The argument <code>i</code> is evaluated at defer time (not execution time), so values 0, 1, 2 are captured. LIFO order → 2, 1, 0.</p>
+  <p><strong>Contrast with closure:</strong></p>
+  <pre><code class="language-go">for i := 0; i &lt; 3; i++ {"{"}
+    defer func() {"{"} fmt.Println(i) {"}"}() // Prints 3 3 3
+{"}"}</code></pre>
+  <p><strong>Key Insight:</strong> Defer arguments are evaluated immediately. Closures capture variables by reference.</p>
+
+  <hr />
+
+  <h2 id="q6">Q6: sync.WaitGroup Misuse</h2>
+  <p><strong>Problem:</strong> Why does this race/crash?</p>
+  <pre><code class="language-go">func main() {"{"}
+    var wg sync.WaitGroup
+    for i := 0; i &lt; 5; i++ {"{"}
+        go func(n int) {"{"}
+            wg.Add(1) // BUG: Add inside goroutine
+            defer wg.Done()
+            fmt.Println(n)
+        {"}"}(i)
+    {"}"}
+    wg.Wait() // might return before all goroutines start
+{"}"}</code></pre>
+  <p><strong>Answer:</strong> <code>wg.Add(1)</code> must be called before the goroutine starts (in the parent). If <code>Wait()</code> is called before a goroutine has called <code>Add</code>, it may return early.</p>
+  <pre><code class="language-go">func main() {"{"}
+    var wg sync.WaitGroup
+    for i := 0; i &lt; 5; i++ {"{"}
+        wg.Add(1) // Correct: Add before launching goroutine
+        go func(n int) {"{"}
+            defer wg.Done()
+            fmt.Println(n)
+        {"}"}(i)
+    {"}"}
+    wg.Wait()
+{"}"}</code></pre>
+
+  <hr />
+
+  <h2 id="q7">Q7: Map Concurrent Access Panic</h2>
+  <p><strong>Problem:</strong> This program crashes. Why?</p>
+  <pre><code class="language-go">func main() {"{"}
+    m := make(map[string]int)
+    go func() {"{"}
+        for {"{"} m["a"]++ {"}"}
+    {"}"}()
+    go func() {"{"}
+        for {"{"} m["b"]++ {"}"}
+    {"}"}()
+    time.Sleep(time.Second)
+{"}"}</code></pre>
+  <p><strong>Answer:</strong> Go maps are NOT safe for concurrent use. Concurrent writes cause <code>fatal error: concurrent map writes</code>. This is detected at runtime (not a race condition — it's a hard crash).</p>
+  <p><strong>Fix:</strong> Use <code>sync.Mutex</code> or <code>sync.Map</code>:</p>
+  <pre><code class="language-go">var mu sync.Mutex
+mu.Lock()
+m["a"]++
+mu.Unlock()
+
+// Or use sync.Map for simple cases:
+var sm sync.Map
+sm.Store("a", 1)</code></pre>
+  <p><strong>Follow-up:</strong> When is <code>sync.Map</code> better than <code>map + Mutex</code>? → When keys are stable (read-heavy) or disjoint goroutines own disjoint keys.</p>
+
+  <hr />
+
+  <h2 id="q8">Q8: Context Cancellation Propagation</h2>
+  <p><strong>Problem:</strong> Show how parent context cancellation propagates to children.</p>
+  <pre><code class="language-go">func main() {"{"}
+    parent, cancelParent := context.WithCancel(context.Background())
+    child, _ := context.WithCancel(parent)
+
+    go func() {"{"}
+        &lt;-child.Done()
+        fmt.Println("child cancelled:", child.Err())
+    {"}"}()
+
+    cancelParent() // cancels parent AND child
+    time.Sleep(100 * time.Millisecond)
+{"}"}</code></pre>
+  <p><strong>Answer:</strong> Prints <code>child cancelled: context canceled</code>. Cancelling a parent context automatically cancels all derived child contexts. This is the core of Go's context tree.</p>
+  <p><strong>Key Rules:</strong></p>
   <ul>
-    <li>Goroutine scheduling and the GMP model</li>
-    <li>Channel patterns (fan-in, fan-out, pipeline)</li>
-    <li>Interface satisfaction and empty interfaces</li>
-    <li>Context propagation and cancellation</li>
-    <li>Race detector and sync primitives</li>
-    <li>Error handling idioms (errors.Is, errors.As)</li>
-    <li>Slice internals and capacity gotchas</li>
+    <li>Parent cancel → all children cancelled</li>
+    <li>Child cancel → parent NOT affected</li>
+    <li>Always call cancel function (even if context expires) to release resources</li>
   </ul>
+
+  <hr />
+
+  <h2 id="q9">Q9: Select with Default (Non-blocking Read)</h2>
+  <p><strong>Problem:</strong> Implement a non-blocking channel read.</p>
+  <pre><code class="language-go">func tryReceive(ch &lt;-chan int) (int, bool) {"{"}
+    select {"{"}
+    case v := &lt;-ch:
+        return v, true
+    default:
+        return 0, false // non-blocking: returns immediately if ch empty
+    {"}"}
+{"}"}
+
+func main() {"{"}
+    ch := make(chan int, 1)
+    ch &lt;- 42
+
+    v, ok := tryReceive(ch)
+    fmt.Println(v, ok) // 42 true
+
+    v, ok = tryReceive(ch)
+    fmt.Println(v, ok) // 0 false
+{"}"}</code></pre>
+  <p><strong>Key Insight:</strong> <code>select</code> with <code>default</code> makes channel operations non-blocking. Without default, select blocks until one case is ready.</p>
+  <p><strong>Follow-up:</strong> How does <code>select</code> choose when multiple cases are ready? → Uniformly random selection (prevents starvation).</p>
+
+  <hr />
+
+  <h2 id="q10">Q10: Error Wrapping and Unwrapping</h2>
+  <p><strong>Problem:</strong> Explain the difference between <code>errors.Is</code> and type assertion for error checking.</p>
+  <pre><code class="language-go">var ErrNotFound = errors.New("not found")
+
+func fetchUser(id int) error {"{"}
+    return fmt.Errorf("fetchUser: %w", ErrNotFound) // wraps
+{"}"}
+
+func main() {"{"}
+    err := fetchUser(1)
+
+    // errors.Is: unwraps chain to match sentinel
+    fmt.Println(errors.Is(err, ErrNotFound)) // true
+
+    // Direct comparison fails on wrapped errors:
+    fmt.Println(err == ErrNotFound) // false
+
+    // errors.As: unwraps to match type
+    var pathErr *os.PathError
+    if errors.As(err, &amp;pathErr) {"{"}
+        fmt.Println(pathErr.Path)
+    {"}"}
+{"}"}</code></pre>
+  <p><strong>Answer:</strong> <code>errors.Is</code> traverses the wrapping chain checking value equality. <code>errors.As</code> traverses the chain checking type assignability. Direct <code>==</code> doesn't unwrap.</p>
+  <p><strong>Rule:</strong> Always use <code>%w</code> verb to wrap errors. Use <code>errors.Is</code> for sentinels, <code>errors.As</code> for typed errors.</p>
+
+  <hr />
+
+  <h2 id="q11">Q11: Mutex vs RWMutex Performance</h2>
+  <p><strong>Problem:</strong> When should you use <code>sync.RWMutex</code> over <code>sync.Mutex</code>?</p>
+  <pre><code class="language-go">type SafeCache struct {"{"}
+    mu    sync.RWMutex
+    items map[string]string
+{"}"}
+
+func (c *SafeCache) Get(key string) (string, bool) {"{"}
+    c.mu.RLock()         // multiple readers allowed
+    defer c.mu.RUnlock()
+    v, ok := c.items[key]
+    return v, ok
+{"}"}
+
+func (c *SafeCache) Set(key, value string) {"{"}
+    c.mu.Lock()          // exclusive write lock
+    defer c.mu.Unlock()
+    c.items[key] = value
+{"}"}</code></pre>
+  <p><strong>Answer:</strong></p>
+  <ul>
+    <li><code>sync.Mutex</code>: Use when reads and writes are roughly equal. Simpler, less overhead per operation.</li>
+    <li><code>sync.RWMutex</code>: Use when reads vastly outnumber writes (10:1+). Multiple goroutines can hold RLock simultaneously.</li>
+    <li><strong>Caveat:</strong> RWMutex has higher per-operation overhead. If contention is low, plain Mutex may be faster.</li>
+  </ul>
+
+  <hr />
+
+  <h2 id="q12">Q12: Channel Direction Types</h2>
+  <p><strong>Problem:</strong> Explain send-only and receive-only channel types.</p>
+  <pre><code class="language-go">// producer: can only send
+func produce(ch chan&lt;- int) {"{"}
+    for i := 0; i &lt; 5; i++ {"{"}
+        ch &lt;- i
+    {"}"}
+    close(ch)
+{"}"}
+
+// consumer: can only receive
+func consume(ch &lt;-chan int) {"{"}
+    for v := range ch {"{"}
+        fmt.Println(v)
+    {"}"}
+{"}"}
+
+func main() {"{"}
+    ch := make(chan int, 5)
+    go produce(ch)
+    consume(ch)
+{"}"}</code></pre>
+  <p><strong>Answer:</strong> Directional channels enforce compile-time safety. A bidirectional <code>chan int</code> implicitly converts to <code>chan&lt;- int</code> (send-only) or <code>&lt;-chan int</code> (receive-only). You cannot close a receive-only channel.</p>
+  <p><strong>Best Practice:</strong> Use directional types in function signatures to document intent and prevent bugs.</p>
+
+  <hr />
+
+  <h2 id="q13">Q13: Struct Embedding and Method Promotion</h2>
+  <p><strong>Problem:</strong> What does this print?</p>
+  <pre><code class="language-go">type Logger interface {"{"}
+    Log(msg string)
+{"}"}
+
+type ConsoleLogger struct{"{"}"}
+func (ConsoleLogger) Log(msg string) {"{"} fmt.Println("LOG:", msg) {"}"}
+
+type Service struct {"{"}
+    ConsoleLogger // embedded: promotes Log method
+{"}"}
+
+func main() {"{"}
+    var s Service
+    s.Log("hello") // promoted method
+
+    var l Logger = s // Service satisfies Logger via embedding
+    l.Log("world")
+{"}"}</code></pre>
+  <p><strong>Answer:</strong> Prints <code>LOG: hello</code> then <code>LOG: world</code>. Embedding promotes all methods of the embedded type. Service implicitly satisfies the Logger interface without explicitly implementing it.</p>
+  <p><strong>Gotcha:</strong> If Service also defines its own <code>Log</code> method, it shadows the embedded one.</p>
+
+  <hr />
+
+  <h2 id="q14">Q14: init() Function Ordering</h2>
+  <p><strong>Problem:</strong> In what order do init functions run?</p>
+  <pre><code class="language-go">// file: a.go (package main)
+func init() {"{"} fmt.Println("a.go init") {"}"}
+
+// file: b.go (package main)
+func init() {"{"} fmt.Println("b.go init 1") {"}"}
+func init() {"{"} fmt.Println("b.go init 2") {"}"}
+
+// file: main.go
+import _ "myapp/config" // config's init runs first
+
+func init() {"{"} fmt.Println("main.go init") {"}"}
+func main() {"{"} fmt.Println("main") {"}"}</code></pre>
+  <p><strong>Answer:</strong> Order rules:</p>
+  <ol>
+    <li>Imported packages' init functions run first (dependency order)</li>
+    <li>Within a package, files are processed in alphabetical order</li>
+    <li>Within a file, multiple init functions run in declaration order</li>
+    <li>Package-level variables are initialized before init()</li>
+  </ol>
+  <p><strong>Output:</strong> config init → a.go init → b.go init 1 → b.go init 2 → main.go init → main</p>
+  <p><strong>Best Practice:</strong> Avoid init() for complex logic. Prefer explicit initialization functions for testability.</p>
+
+  <hr />
+
+  <h2 id="q15">Q15: Goroutine Pool Pattern (Worker Pool)</h2>
+  <p><strong>Problem:</strong> Implement a worker pool with bounded concurrency.</p>
+  <pre><code class="language-go">func workerPool(jobs []int, numWorkers int) []int {"{"}
+    jobCh := make(chan int, len(jobs))
+    resultCh := make(chan int, len(jobs))
+
+    // Start fixed number of workers
+    var wg sync.WaitGroup
+    for w := 0; w &lt; numWorkers; w++ {"{"}
+        wg.Add(1)
+        go func() {"{"}
+            defer wg.Done()
+            for job := range jobCh {"{"}
+                resultCh &lt;- process(job)
+            {"}"}
+        {"}"}()
+    {"}"}
+
+    // Send jobs
+    for _, j := range jobs {"{"}
+        jobCh &lt;- j
+    {"}"}
+    close(jobCh)
+
+    // Wait for workers then close results
+    go func() {"{"}
+        wg.Wait()
+        close(resultCh)
+    {"}"}()
+
+    // Collect results
+    var results []int
+    for r := range resultCh {"{"}
+        results = append(results, r)
+    {"}"}
+    return results
+{"}"}
+
+func process(n int) int {"{"}
+    time.Sleep(100 * time.Millisecond) // simulate work
+    return n * 2
+{"}"}</code></pre>
+  <p><strong>Key Design Points:</strong></p>
+  <ul>
+    <li>Fixed goroutines prevent unbounded concurrency</li>
+    <li>Buffered job channel acts as a queue</li>
+    <li>Closing jobCh signals workers to exit after draining</li>
+    <li>WaitGroup ensures all workers finish before closing resultCh</li>
+  </ul>
+  <p><strong>Follow-up:</strong> How would you add graceful shutdown with context? → Pass ctx to workers, select on ctx.Done() in the work loop.</p>
+
 </DocsLayout>

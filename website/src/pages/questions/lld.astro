@@ -2,14 +2,15 @@
 import DocsLayout from "../../layouts/DocsLayout.astro";
 ---
 <DocsLayout title="LLD Problems (25 Designs)" section="Question Banks" description="25 low-level design problems with full class hierarchies, patterns, and API contracts">
+
   <h2 id="problems">Problems List</h2>
   <ol>
-    <li>Parking Lot System</li>
-    <li>Elevator System</li>
-    <li>Snake & Ladder Game</li>
-    <li>Online Bookstore</li>
-    <li>Rate Limiter (Token Bucket)</li>
-    <li>Pub/Sub Messaging System</li>
+    <li><a href="#lld1">Parking Lot System</a></li>
+    <li><a href="#lld2">Elevator System</a></li>
+    <li><a href="#lld3">Snake &amp; Ladder Game</a></li>
+    <li><a href="#lld4">Online Bookstore</a></li>
+    <li><a href="#lld5">Rate Limiter (Token Bucket)</a></li>
+    <li><a href="#lld6">Pub/Sub Messaging System</a></li>
     <li>Splitwise / Expense Tracker</li>
     <li>Vending Machine (State Pattern)</li>
     <li>Chess Game</li>
@@ -30,4 +31,725 @@ import DocsLayout from "../../layouts/DocsLayout.astro";
     <li>Tic-Tac-Toe (Strategy Pattern)</li>
     <li>Plugin Architecture</li>
   </ol>
+
+  <hr />
+
+  <!-- ============================================ -->
+  <!-- LLD 1: PARKING LOT -->
+  <!-- ============================================ -->
+  <h2 id="lld1">1. Parking Lot System — Full Design</h2>
+
+  <h3>Requirements</h3>
+  <ul>
+    <li>Multi-floor parking lot with different slot sizes (Compact, Regular, Large)</li>
+    <li>Support vehicle types: Motorcycle, Car, Truck</li>
+    <li>Issue ticket on entry, calculate fee on exit</li>
+    <li>Track available slots per floor</li>
+    <li>Multiple entry/exit points</li>
+    <li>Pricing: hourly rate based on vehicle type (Strategy pattern)</li>
+  </ul>
+
+  <h3>Class Diagram (Text)</h3>
+  <pre><code>ParkingLot (Singleton)
+├── floors: List&lt;ParkingFloor&gt;
+├── entryPanels: List&lt;EntryPanel&gt;
+├── exitPanels: List&lt;ExitPanel&gt;
+└── pricingStrategy: PricingStrategy
+
+ParkingFloor
+├── floorNumber: int
+├── slots: Map&lt;SlotType, List&lt;ParkingSlot&gt;&gt;
+└── displayBoard: DisplayBoard
+
+ParkingSlot
+├── slotId: str
+├── slotType: SlotType (COMPACT | REGULAR | LARGE)
+├── isOccupied: bool
+└── vehicle: Vehicle | None
+
+Vehicle (abstract)
+├── licensePlate: str
+├── vehicleType: VehicleType
+└── subclasses: Motorcycle, Car, Truck
+
+Ticket
+├── ticketId: str
+├── vehicle: Vehicle
+├── slot: ParkingSlot
+├── entryTime: datetime
+└── exitTime: datetime | None
+
+PricingStrategy (interface)
+├── HourlyPricing
+├── FlatRatePricing
+└── WeekendSurgePricing</code></pre>
+
+  <h3>Key Classes</h3>
+  <pre><code class="language-python">from abc import ABC, abstractmethod
+from enum import Enum
+from datetime import datetime
+import uuid
+
+class VehicleType(Enum):
+    MOTORCYCLE = 1
+    CAR = 2
+    TRUCK = 3
+
+class SlotType(Enum):
+    COMPACT = 1
+    REGULAR = 2
+    LARGE = 3
+
+VEHICLE_TO_SLOT = {"{"}
+    VehicleType.MOTORCYCLE: SlotType.COMPACT,
+    VehicleType.CAR: SlotType.REGULAR,
+    VehicleType.TRUCK: SlotType.LARGE,
+{"}"}
+
+class Vehicle:
+    def __init__(self, license_plate: str, vehicle_type: VehicleType):
+        self.license_plate = license_plate
+        self.vehicle_type = vehicle_type
+
+class ParkingSlot:
+    def __init__(self, slot_id: str, slot_type: SlotType):
+        self.slot_id = slot_id
+        self.slot_type = slot_type
+        self.is_occupied = False
+        self.vehicle = None
+
+    def park(self, vehicle: Vehicle):
+        self.vehicle = vehicle
+        self.is_occupied = True
+
+    def unpark(self):
+        self.vehicle = None
+        self.is_occupied = False
+
+class PricingStrategy(ABC):
+    @abstractmethod
+    def calculate_fee(self, hours: float, vehicle_type: VehicleType) -&gt; float:
+        pass
+
+class HourlyPricing(PricingStrategy):
+    RATES = {"{"}VehicleType.MOTORCYCLE: 10, VehicleType.CAR: 20, VehicleType.TRUCK: 30{"}"}
+
+    def calculate_fee(self, hours, vehicle_type):
+        import math
+        return math.ceil(hours) * self.RATES[vehicle_type]
+
+class Ticket:
+    def __init__(self, vehicle: Vehicle, slot: ParkingSlot):
+        self.ticket_id = str(uuid.uuid4())
+        self.vehicle = vehicle
+        self.slot = slot
+        self.entry_time = datetime.now()
+        self.exit_time = None
+
+class ParkingFloor:
+    def __init__(self, floor_number: int, slots: list):
+        self.floor_number = floor_number
+        self.slots = slots
+
+    def find_available_slot(self, slot_type: SlotType):
+        for slot in self.slots:
+            if slot.slot_type == slot_type and not slot.is_occupied:
+                return slot
+        return None
+
+class ParkingLot:
+    _instance = None
+
+    def __new__(cls):
+        if cls._instance is None:
+            cls._instance = super().__new__(cls)
+        return cls._instance
+
+    def __init__(self):
+        self.floors = []
+        self.active_tickets = {"{"}{"}"} 
+        self.pricing = HourlyPricing()
+
+    def park_vehicle(self, vehicle: Vehicle) -&gt; Ticket:
+        slot_type = VEHICLE_TO_SLOT[vehicle.vehicle_type]
+        for floor in self.floors:
+            slot = floor.find_available_slot(slot_type)
+            if slot:
+                slot.park(vehicle)
+                ticket = Ticket(vehicle, slot)
+                self.active_tickets[ticket.ticket_id] = ticket
+                return ticket
+        raise Exception("No available slot")
+
+    def unpark_vehicle(self, ticket_id: str) -&gt; float:
+        ticket = self.active_tickets.pop(ticket_id)
+        ticket.exit_time = datetime.now()
+        ticket.slot.unpark()
+        hours = (ticket.exit_time - ticket.entry_time).total_seconds() / 3600
+        return self.pricing.calculate_fee(hours, ticket.vehicle.vehicle_type)</code></pre>
+
+  <h3>Design Patterns</h3>
+  <ul>
+    <li><strong>Singleton:</strong> ParkingLot — single instance for the entire system</li>
+    <li><strong>Strategy:</strong> PricingStrategy — swap pricing algorithms without changing core logic</li>
+    <li><strong>Factory:</strong> Can add VehicleFactory for creating vehicle objects from input</li>
+  </ul>
+
+  <h3>Evaluation Criteria</h3>
+  <ul>
+    <li>Does candidate identify core entities and relationships?</li>
+    <li>Is the slot assignment strategy flexible (can we add EV charging slots)?</li>
+    <li>Thread safety for concurrent entry/exit?</li>
+    <li>Extensibility: add new vehicle types, new pricing?</li>
+  </ul>
+
+  <hr />
+
+  <!-- ============================================ -->
+  <!-- LLD 2: ELEVATOR SYSTEM -->
+  <!-- ============================================ -->
+  <h2 id="lld2">2. Elevator System — Full Design</h2>
+
+  <h3>Requirements</h3>
+  <ul>
+    <li>Multiple elevators in a building with N floors</li>
+    <li>External buttons (up/down per floor), internal panel (floor selection)</li>
+    <li>Optimal scheduling: minimize wait time</li>
+    <li>Support: IDLE, MOVING_UP, MOVING_DOWN, DOOR_OPEN states</li>
+    <li>Emergency stop and overweight detection</li>
+  </ul>
+
+  <h3>Class Diagram (Text)</h3>
+  <pre><code>ElevatorSystem (Controller)
+├── elevators: List&lt;Elevator&gt;
+├── scheduler: ElevatorScheduler
+└── floorRequests: Queue&lt;Request&gt;
+
+Elevator
+├── id: int
+├── currentFloor: int
+├── state: ElevatorState (IDLE | MOVING_UP | MOVING_DOWN | DOOR_OPEN)
+├── destinationQueue: SortedSet&lt;int&gt;
+└── door: Door
+
+Request
+├── floor: int
+├── direction: Direction (UP | DOWN)
+└── timestamp: datetime
+
+ElevatorScheduler (interface)
+├── LOOKScheduler (elevator algorithm)
+├── ShortestSeekScheduler
+└── ZoneBasedScheduler</code></pre>
+
+  <h3>Key Classes</h3>
+  <pre><code class="language-python">from enum import Enum
+from sortedcontainers import SortedList
+
+class Direction(Enum):
+    UP = 1
+    DOWN = 2
+
+class ElevatorState(Enum):
+    IDLE = 1
+    MOVING_UP = 2
+    MOVING_DOWN = 3
+    DOOR_OPEN = 4
+
+class Request:
+    def __init__(self, floor: int, direction: Direction):
+        self.floor = floor
+        self.direction = direction
+
+class Elevator:
+    def __init__(self, elevator_id: int, total_floors: int):
+        self.id = elevator_id
+        self.current_floor = 0
+        self.state = ElevatorState.IDLE
+        self.up_stops = SortedList()
+        self.down_stops = SortedList()
+
+    def add_destination(self, floor: int):
+        if floor &gt; self.current_floor:
+            self.up_stops.add(floor)
+        elif floor &lt; self.current_floor:
+            self.down_stops.add(floor)
+
+    def move(self):
+        if self.state == ElevatorState.MOVING_UP:
+            if self.up_stops:
+                self.current_floor = self.up_stops.pop(0)
+            elif self.down_stops:
+                self.state = ElevatorState.MOVING_DOWN
+        elif self.state == ElevatorState.MOVING_DOWN:
+            if self.down_stops:
+                self.current_floor = self.down_stops.pop(-1)
+            elif self.up_stops:
+                self.state = ElevatorState.MOVING_UP
+        if not self.up_stops and not self.down_stops:
+            self.state = ElevatorState.IDLE
+
+class ElevatorScheduler:
+    """LOOK algorithm: pick nearest elevator moving in same direction."""
+    def assign(self, request: Request, elevators: list) -&gt; Elevator:
+        best = None
+        best_score = float('inf')
+        for elevator in elevators:
+            score = self._score(elevator, request)
+            if score &lt; best_score:
+                best_score = score
+                best = elevator
+        return best
+
+    def _score(self, elevator: Elevator, request: Request) -&gt; int:
+        distance = abs(elevator.current_floor - request.floor)
+        # Prefer idle elevators, then same-direction, then others
+        if elevator.state == ElevatorState.IDLE:
+            return distance
+        elif (elevator.state == ElevatorState.MOVING_UP and
+              request.direction == Direction.UP and
+              elevator.current_floor &lt;= request.floor):
+            return distance
+        elif (elevator.state == ElevatorState.MOVING_DOWN and
+              request.direction == Direction.DOWN and
+              elevator.current_floor &gt;= request.floor):
+            return distance
+        return distance + 100  # penalty for opposite direction
+
+class ElevatorSystem:
+    def __init__(self, num_elevators: int, num_floors: int):
+        self.elevators = [Elevator(i, num_floors) for i in range(num_elevators)]
+        self.scheduler = ElevatorScheduler()
+
+    def request_elevator(self, floor: int, direction: Direction):
+        request = Request(floor, direction)
+        elevator = self.scheduler.assign(request, self.elevators)
+        elevator.add_destination(floor)
+        if elevator.state == ElevatorState.IDLE:
+            if floor &gt; elevator.current_floor:
+                elevator.state = ElevatorState.MOVING_UP
+            else:
+                elevator.state = ElevatorState.MOVING_DOWN</code></pre>
+
+  <h3>Design Patterns</h3>
+  <ul>
+    <li><strong>State:</strong> Elevator states govern behavior (IDLE, MOVING_UP, MOVING_DOWN)</li>
+    <li><strong>Strategy:</strong> ElevatorScheduler — pluggable scheduling algorithms</li>
+    <li><strong>Observer:</strong> Floor displays subscribe to elevator position changes</li>
+  </ul>
+
+  <h3>Evaluation Criteria</h3>
+  <ul>
+    <li>Does the scheduling algorithm handle edge cases (all elevators busy)?</li>
+    <li>State transitions correct (can't go from MOVING_UP to DOOR_OPEN without stopping)?</li>
+    <li>Extensibility: add express elevators, VIP priority?</li>
+  </ul>
+
+  <hr />
+
+  <!-- ============================================ -->
+  <!-- LLD 3: RATE LIMITER -->
+  <!-- ============================================ -->
+  <h2 id="lld3">3. Rate Limiter — Full Design</h2>
+
+  <h3>Requirements</h3>
+  <ul>
+    <li>Limit requests per user/IP within a time window</li>
+    <li>Support multiple algorithms: Token Bucket, Sliding Window Counter</li>
+    <li>Configurable per endpoint (different limits for /api/search vs /api/login)</li>
+    <li>Distributed: works across multiple servers</li>
+    <li>Return HTTP 429 with Retry-After header when throttled</li>
+  </ul>
+
+  <h3>Class Diagram (Text)</h3>
+  <pre><code>RateLimiter (interface)
+├── allow(clientId, endpoint) -&gt; bool
+└── implementations:
+    ├── TokenBucketLimiter
+    ├── SlidingWindowCounter
+    └── FixedWindowCounter
+
+RateLimitConfig
+├── endpoint: str
+├── maxRequests: int
+├── windowSizeSeconds: int
+└── algorithm: AlgorithmType
+
+TokenBucket
+├── capacity: int
+├── tokens: float
+├── refillRate: float (tokens/sec)
+└── lastRefillTime: timestamp</code></pre>
+
+  <h3>Key Classes</h3>
+  <pre><code class="language-python">import time
+from abc import ABC, abstractmethod
+from collections import defaultdict
+import threading
+
+class RateLimiter(ABC):
+    @abstractmethod
+    def allow(self, client_id: str) -&gt; bool:
+        pass
+
+class TokenBucket:
+    def __init__(self, capacity: int, refill_rate: float):
+        self.capacity = capacity
+        self.tokens = capacity
+        self.refill_rate = refill_rate  # tokens per second
+        self.last_refill = time.time()
+        self.lock = threading.Lock()
+
+    def consume(self) -&gt; bool:
+        with self.lock:
+            self._refill()
+            if self.tokens &gt;= 1:
+                self.tokens -= 1
+                return True
+            return False
+
+    def _refill(self):
+        now = time.time()
+        elapsed = now - self.last_refill
+        self.tokens = min(self.capacity, self.tokens + elapsed * self.refill_rate)
+        self.last_refill = now
+
+class TokenBucketLimiter(RateLimiter):
+    def __init__(self, capacity: int, refill_rate: float):
+        self.buckets = defaultdict(lambda: TokenBucket(capacity, refill_rate))
+
+    def allow(self, client_id: str) -&gt; bool:
+        return self.buckets[client_id].consume()
+
+class SlidingWindowCounter(RateLimiter):
+    def __init__(self, max_requests: int, window_seconds: int):
+        self.max_requests = max_requests
+        self.window_seconds = window_seconds
+        self.requests = defaultdict(list)  # client_id -&gt; [timestamps]
+        self.lock = threading.Lock()
+
+    def allow(self, client_id: str) -&gt; bool:
+        with self.lock:
+            now = time.time()
+            window_start = now - self.window_seconds
+            # Remove expired timestamps
+            self.requests[client_id] = [
+                t for t in self.requests[client_id] if t &gt; window_start
+            ]
+            if len(self.requests[client_id]) &lt; self.max_requests:
+                self.requests[client_id].append(now)
+                return True
+            return False
+
+class RateLimiterMiddleware:
+    def __init__(self, config: dict):
+        self.limiters = {"{"}{"}"} 
+        for endpoint, cfg in config.items():
+            if cfg["algorithm"] == "token_bucket":
+                self.limiters[endpoint] = TokenBucketLimiter(
+                    cfg["capacity"], cfg["refill_rate"]
+                )
+            else:
+                self.limiters[endpoint] = SlidingWindowCounter(
+                    cfg["max_requests"], cfg["window_seconds"]
+                )
+
+    def handle_request(self, client_id: str, endpoint: str):
+        limiter = self.limiters.get(endpoint)
+        if limiter and not limiter.allow(client_id):
+            return {"{"}"status": 429, "header": {"{"}"Retry-After": "60"{"}"}{"}"}
+        return {"{"}"status": 200{"}"}</code></pre>
+
+  <h3>Design Patterns</h3>
+  <ul>
+    <li><strong>Strategy:</strong> Different rate limiting algorithms interchangeable</li>
+    <li><strong>Factory:</strong> Create appropriate limiter based on config</li>
+    <li><strong>Decorator/Middleware:</strong> Wraps request handling transparently</li>
+  </ul>
+
+  <h3>Evaluation Criteria</h3>
+  <ul>
+    <li>Thread safety for concurrent request handling</li>
+    <li>Understanding of Token Bucket vs Sliding Window trade-offs</li>
+    <li>Distributed version: Redis-based atomic operations (INCR + EXPIRE)</li>
+    <li>Edge case: clock skew in distributed systems</li>
+  </ul>
+
+  <hr />
+
+  <!-- ============================================ -->
+  <!-- LLD 4: PUB/SUB SYSTEM -->
+  <!-- ============================================ -->
+  <h2 id="lld4">4. Pub/Sub Messaging System — Full Design</h2>
+
+  <h3>Requirements</h3>
+  <ul>
+    <li>Publishers send messages to topics</li>
+    <li>Subscribers register to topics and receive messages</li>
+    <li>Support multiple subscribers per topic</li>
+    <li>Message ordering within a topic</li>
+    <li>At-least-once delivery guarantee</li>
+    <li>Subscriber groups (only one in group receives each message)</li>
+  </ul>
+
+  <h3>Class Diagram (Text)</h3>
+  <pre><code>MessageBroker
+├── topics: Map&lt;str, Topic&gt;
+├── createTopic(name) -&gt; Topic
+├── publish(topicName, message) -&gt; void
+└── subscribe(topicName, subscriber) -&gt; void
+
+Topic
+├── name: str
+├── messages: Queue&lt;Message&gt;
+├── subscribers: List&lt;Subscriber&gt;
+└── publish(message) -&gt; void
+
+Message
+├── id: str
+├── payload: Any
+├── timestamp: datetime
+└── headers: Map&lt;str, str&gt;
+
+Subscriber (interface)
+├── onMessage(message) -&gt; void
+└── implementations:
+    ├── PrintSubscriber
+    ├── DatabaseSubscriber
+    └── WebhookSubscriber</code></pre>
+
+  <h3>Key Classes</h3>
+  <pre><code class="language-python">import uuid
+import threading
+from abc import ABC, abstractmethod
+from collections import defaultdict, deque
+from datetime import datetime
+
+class Message:
+    def __init__(self, payload, headers=None):
+        self.id = str(uuid.uuid4())
+        self.payload = payload
+        self.headers = headers or {"{"}{"}"} 
+        self.timestamp = datetime.now()
+
+class Subscriber(ABC):
+    def __init__(self, subscriber_id: str):
+        self.id = subscriber_id
+
+    @abstractmethod
+    def on_message(self, message: Message) -&gt; None:
+        pass
+
+class PrintSubscriber(Subscriber):
+    def on_message(self, message: Message):
+        print(f"[{"{"}self.id{"}"}] Received: {"{"}message.payload{"}"}")
+
+class Topic:
+    def __init__(self, name: str):
+        self.name = name
+        self.subscribers = []
+        self.messages = deque(maxlen=10000)  # retain last 10k
+        self.lock = threading.Lock()
+
+    def add_subscriber(self, subscriber: Subscriber):
+        with self.lock:
+            self.subscribers.append(subscriber)
+
+    def remove_subscriber(self, subscriber_id: str):
+        with self.lock:
+            self.subscribers = [s for s in self.subscribers if s.id != subscriber_id]
+
+    def publish(self, message: Message):
+        with self.lock:
+            self.messages.append(message)
+            for subscriber in self.subscribers:
+                try:
+                    subscriber.on_message(message)
+                except Exception as e:
+                    print(f"Error delivering to {"{"}subscriber.id{"}"}: {"{"}e{"}"}")
+
+class MessageBroker:
+    def __init__(self):
+        self.topics = {"{"}{"}"} 
+        self.lock = threading.Lock()
+
+    def create_topic(self, name: str) -&gt; Topic:
+        with self.lock:
+            if name not in self.topics:
+                self.topics[name] = Topic(name)
+            return self.topics[name]
+
+    def publish(self, topic_name: str, payload) -&gt; None:
+        topic = self.topics.get(topic_name)
+        if not topic:
+            raise ValueError(f"Topic '{"{"}topic_name{"}"}' not found")
+        message = Message(payload)
+        topic.publish(message)
+
+    def subscribe(self, topic_name: str, subscriber: Subscriber) -&gt; None:
+        topic = self.topics.get(topic_name)
+        if not topic:
+            raise ValueError(f"Topic '{"{"}topic_name{"}"}' not found")
+        topic.add_subscriber(subscriber)
+
+# Usage
+broker = MessageBroker()
+broker.create_topic("orders")
+broker.subscribe("orders", PrintSubscriber("email-service"))
+broker.subscribe("orders", PrintSubscriber("analytics"))
+broker.publish("orders", {"{"}"order_id": 123, "amount": 49.99{"}"})</code></pre>
+
+  <h3>Design Patterns</h3>
+  <ul>
+    <li><strong>Observer:</strong> Core pattern — Topic notifies all subscribers</li>
+    <li><strong>Strategy:</strong> Delivery strategies (push vs pull, sync vs async)</li>
+    <li><strong>Decorator:</strong> Add retry logic, logging around subscribers</li>
+  </ul>
+
+  <h3>Evaluation Criteria</h3>
+  <ul>
+    <li>Thread safety in publish/subscribe operations</li>
+    <li>Handling slow subscribers (async delivery, backpressure)</li>
+    <li>Dead letter queue for failed messages</li>
+    <li>Subscriber groups: load balancing messages across group members</li>
+  </ul>
+
+  <hr />
+
+  <!-- ============================================ -->
+  <!-- LLD 5: LRU CACHE -->
+  <!-- ============================================ -->
+  <h2 id="lld5">5. LRU Cache — Full Design</h2>
+
+  <h3>Requirements</h3>
+  <ul>
+    <li>O(1) get and put operations</li>
+    <li>Fixed capacity — evict least recently used on overflow</li>
+    <li>Thread-safe variant for concurrent access</li>
+    <li>Optional TTL (time-to-live) per entry</li>
+    <li>Support eviction callbacks (notify when item removed)</li>
+  </ul>
+
+  <h3>Class Diagram (Text)</h3>
+  <pre><code>LRUCache
+├── capacity: int
+├── cache: HashMap&lt;key, Node&gt;
+├── head: Node (dummy, most recent)
+├── tail: Node (dummy, least recent)
+├── get(key) -&gt; value
+├── put(key, value) -&gt; void
+└── _evict() -&gt; void
+
+Node (Doubly Linked List)
+├── key: K
+├── value: V
+├── prev: Node
+├── next: Node
+└── expires_at: timestamp | None
+
+ThreadSafeLRUCache extends LRUCache
+└── lock: RWLock</code></pre>
+
+  <h3>Key Classes</h3>
+  <pre><code class="language-python">import time
+import threading
+
+class Node:
+    def __init__(self, key=None, value=None):
+        self.key = key
+        self.value = value
+        self.prev = None
+        self.next = None
+        self.expires_at = None
+
+class LRUCache:
+    def __init__(self, capacity: int, on_evict=None):
+        self.capacity = capacity
+        self.cache = {"{"}{"}"} 
+        self.on_evict = on_evict
+        # Dummy head and tail for easy boundary handling
+        self.head = Node()
+        self.tail = Node()
+        self.head.next = self.tail
+        self.tail.prev = self.head
+
+    def get(self, key):
+        if key not in self.cache:
+            return -1
+        node = self.cache[key]
+        # Check TTL
+        if node.expires_at and time.time() &gt; node.expires_at:
+            self._remove_node(node)
+            del self.cache[key]
+            return -1
+        # Move to front (most recently used)
+        self._remove_node(node)
+        self._add_to_front(node)
+        return node.value
+
+    def put(self, key, value, ttl_seconds=None):
+        if key in self.cache:
+            self._remove_node(self.cache[key])
+        node = Node(key, value)
+        if ttl_seconds:
+            node.expires_at = time.time() + ttl_seconds
+        self.cache[key] = node
+        self._add_to_front(node)
+        if len(self.cache) &gt; self.capacity:
+            self._evict()
+
+    def _evict(self):
+        lru_node = self.tail.prev
+        self._remove_node(lru_node)
+        del self.cache[lru_node.key]
+        if self.on_evict:
+            self.on_evict(lru_node.key, lru_node.value)
+
+    def _add_to_front(self, node):
+        node.prev = self.head
+        node.next = self.head.next
+        self.head.next.prev = node
+        self.head.next = node
+
+    def _remove_node(self, node):
+        node.prev.next = node.next
+        node.next.prev = node.prev
+
+class ThreadSafeLRUCache:
+    """Thread-safe wrapper using reader-writer lock."""
+    def __init__(self, capacity: int):
+        self._cache = LRUCache(capacity)
+        self._lock = threading.Lock()
+
+    def get(self, key):
+        with self._lock:
+            return self._cache.get(key)
+
+    def put(self, key, value, ttl_seconds=None):
+        with self._lock:
+            self._cache.put(key, value, ttl_seconds)
+
+# Usage
+cache = LRUCache(3, on_evict=lambda k, v: print(f"Evicted: {"{"}k{"}"}"))
+cache.put("a", 1)
+cache.put("b", 2)
+cache.put("c", 3)
+cache.get("a")      # moves "a" to front
+cache.put("d", 4)   # evicts "b" (least recently used)</code></pre>
+
+  <h3>Design Patterns</h3>
+  <ul>
+    <li><strong>Proxy/Decorator:</strong> ThreadSafeLRUCache wraps LRUCache adding concurrency</li>
+    <li><strong>Observer:</strong> on_evict callback notifies external systems</li>
+    <li><strong>Template Method:</strong> Can subclass to change eviction policy (LFU, FIFO)</li>
+  </ul>
+
+  <h3>Evaluation Criteria</h3>
+  <ul>
+    <li>Understanding of DLL + HashMap giving O(1) for both operations</li>
+    <li>Correct pointer manipulation (common bug: forgetting to update prev/next)</li>
+    <li>Thread safety approach: RWLock vs full mutex vs lock-free</li>
+    <li>Extension: How to add TTL without scanning all entries? → Lazy expiration on access + background cleaner</li>
+  </ul>
+
 </DocsLayout>
